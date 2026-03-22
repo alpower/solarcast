@@ -1090,6 +1090,11 @@
 </main>
 
 <style>
+	:global(html),
+	:global(body) {
+		height: 100%;
+	}
+
 	:global(body) {
 		margin: 0;
 		font-family: 'Avenir Next', Avenir, 'Segoe UI', sans-serif;
