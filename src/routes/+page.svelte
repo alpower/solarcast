@@ -879,15 +879,33 @@
 							<strong>{result.totals.generationKwh} kWh</strong>
 						</div>
 						<div>
-							<span>Grid import</span>
+							<span class="metric-label">
+								Grid import
+								<button class="info-tip" type="button" aria-label="What is grid import?">
+									?
+									<span class="info-bubble">Energy you need to buy from the grid when solar and battery cannot fully meet demand.</span>
+								</button>
+							</span>
 							<strong>{result.totals.gridImportKwh} kWh</strong>
 						</div>
 						<div>
-							<span>Grid export</span>
+							<span class="metric-label">
+								Grid export
+								<button class="info-tip" type="button" aria-label="What is grid export?">
+									?
+									<span class="info-bubble">Surplus energy sent to the grid after household demand and battery charging are covered.</span>
+								</button>
+							</span>
 							<strong>{result.totals.gridExportKwh} kWh</strong>
 						</div>
 						<div>
-							<span>Curtailed</span>
+							<span class="metric-label">
+								Curtailed
+								<button class="info-tip" type="button" aria-label="What is curtailed energy?">
+									?
+									<span class="info-bubble">Potential generation that cannot be used, stored, or exported because of battery/export constraints.</span>
+								</button>
+							</span>
 							<strong>{result.totals.curtailedKwh} kWh</strong>
 						</div>
 					</div>
@@ -1044,7 +1062,12 @@
 								<tr>
 									<td>{day.date}</td>
 									<td>{day.dayName}</td>
-									<td>{day.forecastSummary}</td>
+									<td>
+										<span class="forecast-cell">
+											<span class="forecast-icon" aria-hidden="true">{weatherIconFromSummary(day.forecastSummary)}</span>
+											<span>{day.forecastSummary}</span>
+										</span>
+									</td>
 									<td>{day.avgCloudPercent}%</td>
 									<td>{day.sunnyHours}</td>
 									<td>{day.generationKwh} kWh</td>
@@ -1103,7 +1126,7 @@
 	}
 
 	main {
-		max-width: 1400px;
+		max-width: 1720px;
 		margin: 0 auto;
 		padding: 2rem 1rem 3rem;
 	}
@@ -1422,6 +1445,71 @@
 		color: #475569;
 	}
 
+	.metric-label {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.info-tip {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1rem;
+		height: 1rem;
+		border-radius: 999px;
+		background: #dbeafe;
+		color: #1e40af;
+		font-size: 0.72rem;
+		font-weight: 500;
+		cursor: help;
+		outline: none;
+		padding: 0;
+		border: none;
+		line-height: 1;
+	}
+
+	.info-tip:focus-visible {
+		box-shadow: 0 0 0 2px #93c5fd;
+	}
+
+	.totals .info-bubble {
+		position: absolute;
+		left: 50%;
+		bottom: calc(100% + 0.55rem);
+		transform: translateX(-50%);
+		width: min(30ch, 70vw);
+		padding: 0.55rem 0.6rem;
+		border-radius: 0.55rem;
+		background: #0f172a;
+		color: #ffffff;
+		font-size: 0.73rem;
+		font-weight: 600;
+		line-height: 1.35;
+		text-align: left;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 140ms ease;
+		z-index: 2;
+	}
+
+	.info-bubble::after {
+		content: '';
+		position: absolute;
+		top: 100%;
+		left: 50%;
+		margin-left: -5px;
+		border-width: 5px;
+		border-style: solid;
+		border-color: #0f172a transparent transparent transparent;
+	}
+
+	.info-tip:hover .info-bubble,
+	.info-tip:focus-visible .info-bubble {
+		opacity: 1;
+	}
+
 	.totals strong {
 		font-size: 1.1rem;
 	}
@@ -1537,6 +1625,17 @@
 		padding: 0.55rem;
 		text-align: left;
 		border-bottom: 1px solid #e2e8f0;
+	}
+
+	.forecast-cell {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.forecast-icon {
+		font-size: 0.95rem;
+		line-height: 1;
 	}
 
 	.note {
