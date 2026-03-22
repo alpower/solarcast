@@ -85,6 +85,7 @@
 	let loading = $state(false);
 	let errorMessage = $state('');
 	let result = $state<ForecastResult | null>(null);
+	const chartModel = $derived(result ? buildChartModel(result.days) : null);
 	let readyToPersist = $state(false);
 
 	const round = (value: number, dp = 2) => Number(value.toFixed(dp));
@@ -171,6 +172,42 @@
 
 	function safeArray<T>(value: unknown): T[] {
 		return Array.isArray(value) ? (value as T[]) : [];
+	}
+
+	function buildChartModel(days: ForecastDay[]) {
+		const chart = {
+			width: 860,
+			height: 280,
+			marginTop: 20,
+			marginRight: 16,
+			marginBottom: 44,
+			marginLeft: 44
+		};
+		const innerWidth = chart.width - chart.marginLeft - chart.marginRight;
+		const innerHeight = chart.height - chart.marginTop - chart.marginBottom;
+		const dayCount = Math.max(1, days.length);
+		const groupWidth = innerWidth / dayCount;
+		const barWidth = Math.max(6, Math.min(18, groupWidth * 0.16));
+		const series = [
+			{ key: 'generationKwh', color: '#16a34a', label: 'Generation' },
+			{ key: 'gridImportKwh', color: '#0ea5e9', label: 'Import' },
+			{ key: 'gridExportKwh', color: '#f59e0b', label: 'Export' },
+			{ key: 'curtailedKwh', color: '#ef4444', label: 'Curtailed' }
+		] as const;
+
+		const maxEnergy = Math.max(
+			0.1,
+			...days.flatMap((d) => [d.generationKwh, d.gridImportKwh, d.gridExportKwh, d.curtailedKwh])
+		);
+		const cloudPath = days
+			.map((d, i) => {
+				const x = chart.marginLeft + groupWidth * i + groupWidth / 2;
+				const y = chart.marginTop + innerHeight * (1 - d.avgCloudPercent / 100);
+				return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+			})
+			.join(' ');
+
+		return { chart, innerWidth, innerHeight, groupWidth, barWidth, series, maxEnergy, cloudPath };
 	}
 
 	function normalizeAzimuth(value: number) {
@@ -719,6 +756,60 @@
 				</div>
 			</div>
 
+			<div class="chart-wrap">
+				<div class="legend">
+					<span class="chip chip-gen">Generation</span>
+					<span class="chip chip-imp">Import</span>
+					<span class="chip chip-exp">Export</span>
+					<span class="chip chip-cur">Curtailed</span>
+					<span class="chip chip-cloud">Cloud % (line)</span>
+				</div>
+				{#if chartModel}
+					<svg viewBox={`0 0 ${chartModel.chart.width} ${chartModel.chart.height}`} aria-label="Weekly weather and energy chart">
+					<line
+						x1={chartModel.chart.marginLeft}
+						y1={chartModel.chart.marginTop + chartModel.innerHeight}
+						x2={chartModel.chart.marginLeft + chartModel.innerWidth}
+						y2={chartModel.chart.marginTop + chartModel.innerHeight}
+						stroke="#94a3b8"
+					/>
+					<line
+						x1={chartModel.chart.marginLeft}
+						y1={chartModel.chart.marginTop}
+						x2={chartModel.chart.marginLeft}
+						y2={chartModel.chart.marginTop + chartModel.innerHeight}
+						stroke="#94a3b8"
+					/>
+
+					{#each result.days as day, i}
+						{#each chartModel.series as s, si}
+							{@const value = day[s.key]}
+							{@const h = (value / chartModel.maxEnergy) * chartModel.innerHeight}
+							{@const x = chartModel.chart.marginLeft + chartModel.groupWidth * i + si * chartModel.barWidth + 6}
+							{@const y = chartModel.chart.marginTop + chartModel.innerHeight - h}
+							<rect x={x} y={y} width={chartModel.barWidth - 2} height={h} fill={s.color} rx="2" />
+						{/each}
+						{@const dayX = chartModel.chart.marginLeft + chartModel.groupWidth * i + chartModel.groupWidth / 2}
+						<text x={dayX} y={chartModel.chart.marginTop + chartModel.innerHeight + 16} text-anchor="middle" class="axis">
+							{day.dayName}
+						</text>
+					{/each}
+
+					<path d={chartModel.cloudPath} fill="none" stroke="#7c3aed" stroke-width="2.5" />
+
+					<text x={10} y={chartModel.chart.marginTop + 8} class="axis">Energy (kWh)</text>
+					<text
+						x={chartModel.chart.marginLeft + chartModel.innerWidth - 6}
+						y={chartModel.chart.marginTop + 12}
+						class="axis"
+						text-anchor="end"
+					>
+						Cloud %
+					</text>
+					</svg>
+				{/if}
+			</div>
+
 			<table>
 				<thead>
 					<tr>
@@ -962,6 +1053,46 @@
 
 	.totals strong {
 		font-size: 1.1rem;
+	}
+
+	.chart-wrap {
+		margin: 0.8rem 0 1rem;
+		padding: 0.8rem;
+		border: 1px solid #e2e8f0;
+		border-radius: 0.75rem;
+		background: #ffffff;
+	}
+
+	.legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.45rem;
+		margin-bottom: 0.6rem;
+	}
+
+	.chip {
+		display: inline-block;
+		padding: 0.2rem 0.5rem;
+		border-radius: 999px;
+		font-size: 0.75rem;
+		color: #0f172a;
+	}
+
+	.chip-gen { background: #dcfce7; }
+	.chip-imp { background: #dbeafe; }
+	.chip-exp { background: #fef3c7; }
+	.chip-cur { background: #fee2e2; }
+	.chip-cloud { background: #ede9fe; }
+
+	svg {
+		width: 100%;
+		height: auto;
+		display: block;
+	}
+
+	.axis {
+		font-size: 10px;
+		fill: #475569;
 	}
 
 	table {
