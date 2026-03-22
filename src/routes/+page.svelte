@@ -681,6 +681,24 @@
 		name="description"
 		content="UK week-ahead solar generation estimate using Open-Meteo weather data and your system setup."
 	/>
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content="Solarcast" />
+	<meta property="og:title" content="Solarcast" />
+	<meta
+		property="og:description"
+		content="7-day UK solar estimate powered by Open-Meteo and Postcodes.io."
+	/>
+	<meta property="og:image" content="/og-card.png" />
+	<meta property="og:image:type" content="image/png" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content="Solarcast" />
+	<meta
+		name="twitter:description"
+		content="7-day UK solar estimate powered by Open-Meteo and Postcodes.io."
+	/>
+	<meta name="twitter:image" content="/og-card.png" />
 </svelte:head>
 
 <main>
