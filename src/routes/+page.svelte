@@ -239,6 +239,11 @@
 		return best;
 	}
 
+	function compassLabelFromAzimuth(azimuth: number) {
+		const key = compassKeyFromAzimuth(azimuth);
+		return compassOptions.find((option) => option.key === key)?.label ?? 'South';
+	}
+
 	onMount(() => {
 		try {
 			const raw = localStorage.getItem(STORAGE_KEY);
@@ -597,274 +602,297 @@
 </svelte:head>
 
 <main>
-	<section class="card">
-		<h1>Solarcast</h1>
-		<p class="subtitle">7-day UK solar estimate powered by Open-Meteo</p>
+	<div class="app-layout">
+		<div class="left-col">
+			<section class="card form-card">
+				<h1>Solarcast</h1>
+				<p class="subtitle">7-day UK solar estimate powered by Open-Meteo</p>
 
-		<form
-			onsubmit={(event) => {
-				event.preventDefault();
-				void buildForecast();
-			}}
-		>
-			<label>
-				Location (UK)
-				<input bind:value={locationQuery} placeholder="e.g. Bristol or SW1A 1AA" required />
-			</label>
-
-			<div class="panel-section">
-				<div class="section-head">
-					<h3>Panel strings</h3>
-					<button class="ghost" type="button" onclick={addPanelString}>Add string</button>
-				</div>
-
-				{#each panelStrings as panel (panel.id)}
-					<div class="panel-row">
-						<label>
-							Name
-							<input bind:value={panel.name} placeholder={`String ${panel.id}`} />
-						</label>
-						<label>
-							kWp
-							<input bind:value={panel.panelKw} type="number" min="0" step="0.1" />
-						</label>
-						<label>
-							Tilt
-							<input bind:value={panel.tilt} type="number" min="0" max="90" step="1" />
-						</label>
-						<label>
-							Direction
-							<select
-								value={compassKeyFromAzimuth(panel.azimuth)}
-								onchange={(event) => {
-									const value = (event.currentTarget as HTMLSelectElement).value;
-									panel.azimuth = azimuthFromCompassKey(value);
-								}}
-							>
-								{#each compassOptions as option}
-									<option value={option.key}>{option.label}</option>
-								{/each}
-							</select>
-						</label>
-						<label>
-							Losses %
-							<input bind:value={panel.lossPercent} type="number" min="0" max="80" step="1" />
-						</label>
-						<label>
-							Cal
-							<input bind:value={panel.calibrationFactor} type="number" min="0.5" max="1.5" step="0.01" />
-						</label>
-						<button
-							type="button"
-							class="remove"
-							onclick={() => removePanelString(panel.id)}
-							disabled={panelStrings.length <= 1}
-						>
-							Remove
-						</button>
-					</div>
-				{/each}
-			</div>
-
-			<div class="grid">
-				<label>
-					Battery (kWh)
-					<input bind:value={batteryKwh} type="number" min="0" step="0.1" />
-				</label>
-
-				<label>
-					Start SoC (%)
-					<input bind:value={initialSocPercent} type="number" min="0" max="100" step="1" />
-				</label>
-
-				<label>
-					Round-trip efficiency (%)
-					<input bind:value={roundTripEfficiencyPercent} type="number" min="50" max="100" step="1" />
-				</label>
-
-				<label>
-					Daily usage (kWh)
-					<input bind:value={dailyUsageKwh} type="number" min="0" step="0.1" />
-				</label>
-			</div>
-
-			<details class="advanced">
-				<summary>Advanced forecast tuning</summary>
-				<div class="grid">
+				<form
+					onsubmit={(event) => {
+						event.preventDefault();
+						void buildForecast();
+					}}
+				>
 					<label>
-						Forecast bias (%)
-						<input bind:value={globalIrradianceBiasPercent} type="number" min="70" max="140" step="1" />
+						Location (UK)
+						<input bind:value={locationQuery} placeholder="e.g. Bristol or SW1A 1AA" required />
 					</label>
-					<label>
-						Temp coeff (%/C)
-						<input bind:value={tempCoefficientPercentPerC} type="number" min="-0.7" max="-0.2" step="0.01" />
-					</label>
-					<label>
-						NOCT rise @800W/m2 (C)
-						<input bind:value={noctRiseAt800Wm2} type="number" min="10" max="40" step="1" />
-					</label>
-					<label>
-						Sunny direct threshold
-						<input bind:value={sunnyDirectThresholdWm2} type="number" min="50" max="400" step="10" />
-					</label>
-					<label>
-						Sunny cloud max (%)
-						<input bind:value={sunnyCloudMaxPercent} type="number" min="10" max="90" step="1" />
-					</label>
-					<label>
-						Export limit (kW, instant)
-						<input bind:value={exportLimitKw} type="number" min="0" max="20" step="0.1" />
-					</label>
-				</div>
-			</details>
 
-			<button disabled={loading}>
-				{#if loading}
-					Calculating...
-				{:else}
-					Build forecast
-				{/if}
-			</button>
-		</form>
-	</section>
+					<div class="panel-section">
+						<div class="section-head">
+							<h3>Panel strings</h3>
+							<button class="ghost" type="button" onclick={addPanelString}>Add string</button>
+						</div>
 
-	{#if errorMessage}
-		<p class="error">{errorMessage}</p>
-	{/if}
-
-	{#if result}
-		<section class="card results">
-			<h2>{result.placeLabel}</h2>
-			<p class="meta">{result.latitude}, {result.longitude} ({result.timezone})</p>
-
-			<div class="totals">
-				<div>
-					<span>Week generation</span>
-					<strong>{result.totals.generationKwh} kWh</strong>
-				</div>
-				<div>
-					<span>Grid import</span>
-					<strong>{result.totals.gridImportKwh} kWh</strong>
-				</div>
-				<div>
-					<span>Grid export</span>
-					<strong>{result.totals.gridExportKwh} kWh</strong>
-				</div>
-				<div>
-					<span>Curtailed</span>
-					<strong>{result.totals.curtailedKwh} kWh</strong>
-				</div>
-			</div>
-
-			<div class="chart-wrap">
-				<div class="legend">
-					<span class="chip chip-gen">Generation</span>
-					<span class="chip chip-imp">Import</span>
-					<span class="chip chip-exp">Export</span>
-					<span class="chip chip-cur">Curtailed</span>
-					<span class="chip chip-cloud">Cloud % (line)</span>
-				</div>
-				{#if chartModel}
-					<svg viewBox={`0 0 ${chartModel.chart.width} ${chartModel.chart.height}`} aria-label="Weekly weather and energy chart">
-					<line
-						x1={chartModel.chart.marginLeft}
-						y1={chartModel.chart.marginTop + chartModel.innerHeight}
-						x2={chartModel.chart.marginLeft + chartModel.innerWidth}
-						y2={chartModel.chart.marginTop + chartModel.innerHeight}
-						stroke="#94a3b8"
-					/>
-					<line
-						x1={chartModel.chart.marginLeft}
-						y1={chartModel.chart.marginTop}
-						x2={chartModel.chart.marginLeft}
-						y2={chartModel.chart.marginTop + chartModel.innerHeight}
-						stroke="#94a3b8"
-					/>
-
-					{#each result.days as day, i}
-						{#each chartModel.series as s, si}
-							{@const value = day[s.key]}
-							{@const h = (value / chartModel.maxEnergy) * chartModel.innerHeight}
-							{@const x = chartModel.chart.marginLeft + chartModel.groupWidth * i + si * chartModel.barWidth + 6}
-							{@const y = chartModel.chart.marginTop + chartModel.innerHeight - h}
-							<rect x={x} y={y} width={chartModel.barWidth - 2} height={h} fill={s.color} rx="2" />
+						{#each panelStrings as panel (panel.id)}
+							<details class="panel-item" open={panelStrings.length === 1}>
+								<summary>
+									<span class="panel-title">{panel.name || `String ${panel.id}`}</span>
+									<span class="panel-meta">
+										{Number(panel.panelKw || 0).toFixed(1)} kWp · {compassLabelFromAzimuth(panel.azimuth)} ·
+										tilt {Math.round(panel.tilt || 0)}° · loss {Math.round(panel.lossPercent || 0)}% · cal{' '}
+										{Number(panel.calibrationFactor || 1).toFixed(2)}
+									</span>
+								</summary>
+								<div class="panel-fields">
+									<label>
+										Name
+										<input bind:value={panel.name} placeholder={`String ${panel.id}`} />
+									</label>
+									<label>
+										kWp
+										<input bind:value={panel.panelKw} type="number" min="0" step="0.1" />
+									</label>
+									<label>
+										Tilt
+										<input bind:value={panel.tilt} type="number" min="0" max="90" step="1" />
+									</label>
+									<label>
+										Direction
+										<select
+											value={compassKeyFromAzimuth(panel.azimuth)}
+											onchange={(event) => {
+												const value = (event.currentTarget as HTMLSelectElement).value;
+												panel.azimuth = azimuthFromCompassKey(value);
+											}}
+										>
+											{#each compassOptions as option}
+												<option value={option.key}>{option.label}</option>
+											{/each}
+										</select>
+									</label>
+									<label>
+										Losses %
+										<input bind:value={panel.lossPercent} type="number" min="0" max="80" step="1" />
+									</label>
+									<label>
+										Cal
+										<input bind:value={panel.calibrationFactor} type="number" min="0.5" max="1.5" step="0.01" />
+									</label>
+								</div>
+								<div class="panel-actions">
+									<button
+										type="button"
+										class="remove"
+										onclick={() => removePanelString(panel.id)}
+										disabled={panelStrings.length <= 1}
+									>
+										Remove string
+									</button>
+								</div>
+							</details>
 						{/each}
-						{@const dayX = chartModel.chart.marginLeft + chartModel.groupWidth * i + chartModel.groupWidth / 2}
-						<text x={dayX} y={chartModel.chart.marginTop + chartModel.innerHeight + 16} text-anchor="middle" class="axis">
-							{day.dayName}
-						</text>
-					{/each}
+					</div>
 
-					<path d={chartModel.cloudPath} fill="none" stroke="#7c3aed" stroke-width="2.5" />
+					<div class="grid">
+						<label>
+							Battery (kWh)
+							<input bind:value={batteryKwh} type="number" min="0" step="0.1" />
+						</label>
 
-					<text x={10} y={chartModel.chart.marginTop + 8} class="axis">Energy (kWh)</text>
-					<text
-						x={chartModel.chart.marginLeft + chartModel.innerWidth - 6}
-						y={chartModel.chart.marginTop + 12}
-						class="axis"
-						text-anchor="end"
-					>
-						Cloud %
-					</text>
-					</svg>
-				{/if}
-			</div>
+						<label>
+							Start SoC (%)
+							<input bind:value={initialSocPercent} type="number" min="0" max="100" step="1" />
+						</label>
 
-			<table>
-				<thead>
-					<tr>
-						<th>Date</th>
-						<th>Day</th>
-						<th>Forecast</th>
-						<th>Cloud</th>
-						<th>Sunny hrs</th>
-						<th>Generation</th>
-							<th>Import</th>
-							<th>Export</th>
-							<th>Curtailed</th>
-							<th>End battery SoC</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each result.days as day}
-						<tr>
-							<td>{day.date}</td>
-							<td>{day.dayName}</td>
-							<td>{day.forecastSummary}</td>
-							<td>{day.avgCloudPercent}%</td>
-							<td>{day.sunnyHours}</td>
-							<td>{day.generationKwh} kWh</td>
-								<td>{day.gridImportKwh} kWh</td>
-								<td>{day.gridExportKwh} kWh</td>
-								<td>{day.curtailedKwh} kWh</td>
-								<td>{day.endBatterySocKwh} kWh</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+						<label>
+							Round-trip efficiency (%)
+							<input bind:value={roundTripEfficiencyPercent} type="number" min="50" max="100" step="1" />
+						</label>
 
-			<p class="note">
-				Azimuth means panel compass direction. This app uses Open-Meteo convention: South = 0, East = -90,
-				West = 90, North = +/-180.
-			</p>
-			<p class="note">
-				Generation now includes a panel temperature derate model and optional per-string calibration factor
-				(1.00 = baseline).
-			</p>
-			<p class="note">
-				If your output is consistently higher than forecast, increase Forecast bias above 100% or raise a
-				string's Cal value above 1.00.
-			</p>
-			<p class="note">
-				Export limit is an instantaneous kW cap. In this hourly model, we apply it to each hour's average export.
-				Extra energy beyond battery + export cap is shown as curtailed.
-			</p>
-			<p class="note">
-				Model notes: this is a simplified estimate using forecast irradiance per panel string, then battery and
-				fixed demand simulation.
-			</p>
-		</section>
-	{/if}
+						<label>
+							Daily usage (kWh)
+							<input bind:value={dailyUsageKwh} type="number" min="0" step="0.1" />
+						</label>
+					</div>
+
+					<details class="advanced">
+						<summary>Advanced forecast tuning</summary>
+						<div class="grid">
+							<label>
+								Forecast bias (%)
+								<input bind:value={globalIrradianceBiasPercent} type="number" min="70" max="140" step="1" />
+							</label>
+							<label>
+								Temp coeff (%/C)
+								<input bind:value={tempCoefficientPercentPerC} type="number" min="-0.7" max="-0.2" step="0.01" />
+							</label>
+							<label>
+								NOCT rise @800W/m2 (C)
+								<input bind:value={noctRiseAt800Wm2} type="number" min="10" max="40" step="1" />
+							</label>
+							<label>
+								Sunny direct threshold
+								<input bind:value={sunnyDirectThresholdWm2} type="number" min="50" max="400" step="10" />
+							</label>
+							<label>
+								Sunny cloud max (%)
+								<input bind:value={sunnyCloudMaxPercent} type="number" min="10" max="90" step="1" />
+							</label>
+							<label>
+								Export limit (kW, instant)
+								<input bind:value={exportLimitKw} type="number" min="0" max="20" step="0.1" />
+							</label>
+						</div>
+					</details>
+
+					<button disabled={loading}>
+						{#if loading}
+							Calculating...
+						{:else}
+							Build forecast
+						{/if}
+					</button>
+				</form>
+			</section>
+
+			{#if errorMessage}
+				<p class="error">{errorMessage}</p>
+			{/if}
+		</div>
+
+		<div class="right-col">
+			{#if result}
+				<section class="card results">
+					<h2>{result.placeLabel}</h2>
+					<p class="meta">{result.latitude}, {result.longitude} ({result.timezone})</p>
+
+					<div class="totals">
+						<div>
+							<span>Week generation</span>
+							<strong>{result.totals.generationKwh} kWh</strong>
+						</div>
+						<div>
+							<span>Grid import</span>
+							<strong>{result.totals.gridImportKwh} kWh</strong>
+						</div>
+						<div>
+							<span>Grid export</span>
+							<strong>{result.totals.gridExportKwh} kWh</strong>
+						</div>
+						<div>
+							<span>Curtailed</span>
+							<strong>{result.totals.curtailedKwh} kWh</strong>
+						</div>
+					</div>
+
+					<div class="chart-wrap">
+						<div class="legend">
+							<span class="chip chip-gen">Generation</span>
+							<span class="chip chip-imp">Import</span>
+							<span class="chip chip-exp">Export</span>
+							<span class="chip chip-cur">Curtailed</span>
+							<span class="chip chip-cloud">Cloud % (line)</span>
+						</div>
+						{#if chartModel}
+							<svg viewBox={`0 0 ${chartModel.chart.width} ${chartModel.chart.height}`} aria-label="Weekly weather and energy chart">
+								<line
+									x1={chartModel.chart.marginLeft}
+									y1={chartModel.chart.marginTop + chartModel.innerHeight}
+									x2={chartModel.chart.marginLeft + chartModel.innerWidth}
+									y2={chartModel.chart.marginTop + chartModel.innerHeight}
+									stroke="#94a3b8"
+								/>
+								<line
+									x1={chartModel.chart.marginLeft}
+									y1={chartModel.chart.marginTop}
+									x2={chartModel.chart.marginLeft}
+									y2={chartModel.chart.marginTop + chartModel.innerHeight}
+									stroke="#94a3b8"
+								/>
+
+								{#each result.days as day, i}
+									{#each chartModel.series as s, si}
+										{@const value = day[s.key]}
+										{@const h = (value / chartModel.maxEnergy) * chartModel.innerHeight}
+										{@const x = chartModel.chart.marginLeft + chartModel.groupWidth * i + si * chartModel.barWidth + 6}
+										{@const y = chartModel.chart.marginTop + chartModel.innerHeight - h}
+										<rect x={x} y={y} width={chartModel.barWidth - 2} height={h} fill={s.color} rx="2" />
+									{/each}
+									{@const dayX = chartModel.chart.marginLeft + chartModel.groupWidth * i + chartModel.groupWidth / 2}
+									<text x={dayX} y={chartModel.chart.marginTop + chartModel.innerHeight + 16} text-anchor="middle" class="axis">
+										{day.dayName}
+									</text>
+								{/each}
+
+								<path d={chartModel.cloudPath} fill="none" stroke="#7c3aed" stroke-width="2.5" />
+
+								<text x={10} y={chartModel.chart.marginTop + 8} class="axis">Energy (kWh)</text>
+								<text
+									x={chartModel.chart.marginLeft + chartModel.innerWidth - 6}
+									y={chartModel.chart.marginTop + 12}
+									class="axis"
+									text-anchor="end"
+								>
+									Cloud %
+								</text>
+							</svg>
+						{/if}
+					</div>
+
+					<table>
+						<thead>
+							<tr>
+								<th>Date</th>
+								<th>Day</th>
+								<th>Forecast</th>
+								<th>Cloud</th>
+								<th>Sunny hrs</th>
+								<th>Generation</th>
+								<th>Import</th>
+								<th>Export</th>
+								<th>Curtailed</th>
+								<th>End battery SoC</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each result.days as day}
+								<tr>
+									<td>{day.date}</td>
+									<td>{day.dayName}</td>
+									<td>{day.forecastSummary}</td>
+									<td>{day.avgCloudPercent}%</td>
+									<td>{day.sunnyHours}</td>
+									<td>{day.generationKwh} kWh</td>
+									<td>{day.gridImportKwh} kWh</td>
+									<td>{day.gridExportKwh} kWh</td>
+									<td>{day.curtailedKwh} kWh</td>
+									<td>{day.endBatterySocKwh} kWh</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+
+					<p class="note">
+						Azimuth means panel compass direction. This app uses Open-Meteo convention: South = 0, East = -90,
+						West = 90, North = +/-180.
+					</p>
+					<p class="note">
+						Generation now includes a panel temperature derate model and optional per-string calibration factor
+						(1.00 = baseline).
+					</p>
+					<p class="note">
+						If your output is consistently higher than forecast, increase Forecast bias above 100% or raise a
+						string's Cal value above 1.00.
+					</p>
+					<p class="note">
+						Export limit is an instantaneous kW cap. In this hourly model, we apply it to each hour's average export.
+						Extra energy beyond battery + export cap is shown as curtailed.
+					</p>
+					<p class="note">
+						Model notes: this is a simplified estimate using forecast irradiance per panel string, then battery and
+						fixed demand simulation.
+					</p>
+				</section>
+			{:else}
+				<section class="card results placeholder">
+					<h2>Forecast</h2>
+					<p class="meta">Set your inputs on the left and click Build forecast.</p>
+				</section>
+			{/if}
+		</div>
+	</div>
 </main>
 
 <style>
@@ -876,9 +904,20 @@
 	}
 
 	main {
-		max-width: 980px;
+		max-width: 1400px;
 		margin: 0 auto;
 		padding: 2rem 1rem 3rem;
+	}
+
+	.app-layout {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 1rem;
+	}
+
+	.left-col,
+	.right-col {
+		min-width: 0;
 	}
 
 	.card {
@@ -948,19 +987,50 @@
 		background: #f8fafc;
 	}
 
-	.panel-row {
-		display: grid;
-		grid-template-columns: 1.25fr repeat(5, minmax(110px, 1fr)) auto;
-		gap: 0.6rem;
-		align-items: end;
-		padding: 0.65rem;
+	.panel-item {
 		border: 1px solid #e2e8f0;
 		border-radius: 0.65rem;
 		background: #fff;
+		padding: 0.65rem;
 	}
 
-	.panel-row + .panel-row {
+	.panel-item + .panel-item {
 		margin-top: 0.6rem;
+	}
+
+	.panel-item summary {
+		list-style: none;
+		cursor: pointer;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.panel-item summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.panel-title {
+		font-weight: 700;
+		color: #0f172a;
+	}
+
+	.panel-meta {
+		font-size: 0.82rem;
+		color: #475569;
+	}
+
+	.panel-fields {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+		gap: 0.65rem;
+		margin-top: 0.75rem;
+	}
+
+	.panel-actions {
+		margin-top: 0.65rem;
+		display: flex;
+		justify-content: flex-end;
 	}
 
 	.grid {
@@ -1020,7 +1090,14 @@
 	}
 
 	.results {
-		margin-top: 1rem;
+		margin-top: 0;
+	}
+
+	.placeholder {
+		min-height: 160px;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
 	}
 
 	h2 {
@@ -1115,12 +1192,32 @@
 	}
 
 	@media (max-width: 920px) {
-		.panel-row {
+		.panel-fields {
 			grid-template-columns: repeat(2, minmax(120px, 1fr));
 		}
 	}
 
+	@media (min-width: 1100px) {
+		.app-layout {
+			grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1.45fr);
+			align-items: start;
+		}
+
+		.form-card {
+			position: sticky;
+			top: 1rem;
+		}
+	}
+
 	@media (max-width: 720px) {
+		.panel-fields {
+			grid-template-columns: 1fr;
+		}
+
+		.panel-actions .remove {
+			width: 100%;
+		}
+
 		table {
 			font-size: 0.82rem;
 		}
