@@ -1,42 +1,68 @@
-# sv
+# Solarcast
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Solarcast is a SvelteKit app that estimates UK week-ahead solar generation using Open-Meteo forecast data and your system setup.
 
-## Creating a project
+## Features
 
-If you're seeing this, you've probably already done this step. Congrats!
+- UK location lookup by town or postcode
+- Multiple panel strings, each with:
+  - kWp
+  - tilt
+  - compass direction (azimuth)
+  - loss percentage
+  - calibration factor
+- Battery and demand simulation:
+  - battery capacity
+  - initial SoC
+  - round-trip efficiency
+  - daily usage
+- Export cap and curtailment modelling
+- 7-day table with:
+  - day/date
+  - plain-English forecast
+  - cloud %
+  - sunny hours
+  - generation/import/export/curtailed
+  - end battery SoC
+- Weekly chart with weather icons, cloud line, and grouped hover tooltip
+- Persists settings and last forecast in localStorage
+
+## Data Sources
+
+- Open-Meteo Geocoding API
+- Open-Meteo Forecast API:
+  - `hourly=global_tilted_irradiance`
+  - `hourly=temperature_2m,cloud_cover,direct_radiation`
+  - `daily=weather_code`
+- Postcodes.io for UK postcode coordinate lookup fallback
+
+## Model Notes
+
+- Uses hourly forecast timesteps.
+- Export limit is an instantaneous power cap (`kW`), approximated per hourly timestep.
+- Sunny hours are counted from hourly thresholds:
+  - `direct_radiation >= sunnyDirectThresholdWm2`
+  - `cloud_cover <= sunnyCloudMaxPercent`
+- Temperature derating uses ambient temperature plus configurable module temperature rise.
+- This is a practical planning model, not a physical-grade plant simulation.
+
+## Develop
 
 ```sh
-# create a new project
-npx sv create my-app
-```
-
-To recreate this project with the same configuration:
-
-```sh
-# recreate this project
-npx sv@0.12.8 create --template minimal --types ts --install npm .
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
+npm install
 npm run dev -- --open
 ```
 
-## Building
-
-To create a production version of your app:
+## Validate
 
 ```sh
+npm run check
 npm run build
 ```
 
-You can preview the production build with `npm run preview`.
+## Deploy
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+This project currently uses `@sveltejs/adapter-auto`.
+
+- For the easiest Git-based deployment, use Vercel.
+- If needed, switch to a platform-specific adapter (for example Vercel/Netlify/Cloudflare) in `svelte.config.js`.

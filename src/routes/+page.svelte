@@ -782,26 +782,32 @@
 						<div class="grid">
 							<label>
 								Forecast bias (%)
+								<span class="helper-text">Overall output scaling. Raise if forecasts are consistently low.</span>
 								<input bind:value={globalIrradianceBiasPercent} type="number" min="70" max="140" step="1" />
 							</label>
 							<label>
 								Temp coeff (%/C)
+								<span class="helper-text">Panel power change per deg C above 25C (usually negative).</span>
 								<input bind:value={tempCoefficientPercentPerC} type="number" min="-0.7" max="-0.2" step="0.01" />
 							</label>
 							<label>
 								NOCT rise @800W/m2 (C)
+								<span class="helper-text">Estimated panel temperature rise above ambient at strong sun.</span>
 								<input bind:value={noctRiseAt800Wm2} type="number" min="10" max="40" step="1" />
 							</label>
 							<label>
 								Sunny direct threshold
+								<span class="helper-text">Hourly direct radiation needed to count as a sunny hour.</span>
 								<input bind:value={sunnyDirectThresholdWm2} type="number" min="50" max="400" step="10" />
 							</label>
 							<label>
 								Sunny cloud max (%)
+								<span class="helper-text">Maximum cloud cover allowed for a sunny-hour count.</span>
 								<input bind:value={sunnyCloudMaxPercent} type="number" min="10" max="90" step="1" />
 							</label>
 							<label>
 								Export limit (kW, instant)
+								<span class="helper-text">Grid export power cap from your inverter/export settings.</span>
 								<input bind:value={exportLimitKw} type="number" min="0" max="20" step="0.1" />
 							</label>
 						</div>
