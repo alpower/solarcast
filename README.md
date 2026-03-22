@@ -1,6 +1,10 @@
 # Solarcast
 
-Solarcast is a SvelteKit app that estimates UK week-ahead solar generation using Open-Meteo forecast data and your system setup.
+Solarcast is a SvelteKit app that estimates UK week-ahead solar generation using Open-Meteo forecast data and your system setup.  Uses browser localstorage and collects no data.
+Demo: https://solarcast.alpower.com/
+
+<img width="3470" height="2608" alt="CleanShot 2026-03-22 at 17 19 46@2x" src="https://github.com/user-attachments/assets/acda890b-4706-49a5-8166-9d8075ee8e0f" />
+
 
 ## Features
 
