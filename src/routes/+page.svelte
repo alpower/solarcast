@@ -1042,43 +1042,45 @@
 						{/if}
 					</div>
 
-					<table>
-						<thead>
-							<tr>
-								<th>Date</th>
-								<th>Day</th>
-								<th>Forecast</th>
-								<th>Cloud</th>
-								<th>Sunny hrs</th>
-								<th>Generation</th>
-								<th>Import</th>
-								<th>Export</th>
-								<th>Curtailed</th>
-								<th>End battery SoC</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each result.days as day}
+					<div class="table-wrap">
+						<table>
+							<thead>
 								<tr>
-									<td>{day.date}</td>
-									<td>{day.dayName}</td>
-									<td>
-										<span class="forecast-cell">
-											<span class="forecast-icon" aria-hidden="true">{weatherIconFromSummary(day.forecastSummary)}</span>
-											<span>{day.forecastSummary}</span>
-										</span>
-									</td>
-									<td>{day.avgCloudPercent}%</td>
-									<td>{day.sunnyHours}</td>
-									<td>{day.generationKwh} kWh</td>
-									<td>{day.gridImportKwh} kWh</td>
-									<td>{day.gridExportKwh} kWh</td>
-									<td>{day.curtailedKwh} kWh</td>
-									<td>{day.endBatterySocKwh} kWh</td>
+									<th>Date</th>
+									<th>Day</th>
+									<th>Forecast</th>
+									<th>Cloud</th>
+									<th>Sunny hrs</th>
+									<th>Generation</th>
+									<th>Import</th>
+									<th>Export</th>
+									<th>Curtailed</th>
+									<th>End battery SoC</th>
 								</tr>
-							{/each}
-						</tbody>
-					</table>
+							</thead>
+							<tbody>
+								{#each result.days as day}
+									<tr>
+										<td>{day.date}</td>
+										<td>{day.dayName}</td>
+										<td>
+											<span class="forecast-cell">
+												<span class="forecast-icon" aria-hidden="true">{weatherIconFromSummary(day.forecastSummary)}</span>
+												<span>{day.forecastSummary}</span>
+											</span>
+										</td>
+										<td>{day.avgCloudPercent}%</td>
+										<td>{day.sunnyHours}</td>
+										<td>{day.generationKwh} kWh</td>
+										<td>{day.gridImportKwh} kWh</td>
+										<td>{day.gridExportKwh} kWh</td>
+										<td>{day.curtailedKwh} kWh</td>
+										<td>{day.endBatterySocKwh} kWh</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
 
 					<p class="note">
 						Azimuth means panel compass direction. This app uses Open-Meteo convention: South = 0, East = -90,
@@ -1144,6 +1146,11 @@
 
 	.right-col {
 		display: flex;
+	}
+
+	.right-col > .card {
+		flex: 1;
+		width: 100%;
 	}
 
 	.card {
@@ -1614,10 +1621,18 @@
 		gap: 0.35rem;
 	}
 
+	.table-wrap {
+		width: 100%;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		overscroll-behavior-x: contain;
+	}
+
 	table {
 		width: 100%;
 		border-collapse: collapse;
 		font-size: 0.92rem;
+		min-width: 920px;
 	}
 
 	th,
@@ -1650,10 +1665,14 @@
 		}
 	}
 
-	@media (min-width: 1100px) {
+	@media (min-width: 1280px) {
 		.app-layout {
-			grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1.45fr);
+			grid-template-columns: minmax(340px, 425px) minmax(0, 1fr);
 			align-items: start;
+		}
+
+		.left-col {
+			max-width: 425px;
 		}
 
 		.form-card {
@@ -1662,7 +1681,25 @@
 		}
 	}
 
+	@media (max-width: 1279px) {
+		.app-layout {
+			grid-template-columns: 1fr;
+		}
+
+		.left-col {
+			max-width: none;
+		}
+
+		table {
+			min-width: 860px;
+		}
+	}
+
 	@media (max-width: 720px) {
+		.left-col {
+			max-width: none;
+		}
+
 		.right-col {
 			display: block;
 		}
