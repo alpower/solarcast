@@ -1,0 +1,1002 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+
+	type PanelString = {
+		id: number;
+		name: string;
+		panelKw: number;
+		tilt: number;
+		azimuth: number;
+		lossPercent: number;
+		calibrationFactor: number;
+	};
+
+	type ForecastDay = {
+		date: string;
+		dayName: string;
+		forecastSummary: string;
+		avgCloudPercent: number;
+		sunnyHours: number;
+		generationKwh: number;
+		gridImportKwh: number;
+		gridExportKwh: number;
+		curtailedKwh: number;
+		endBatterySocKwh: number;
+	};
+
+	type ForecastResult = {
+		placeLabel: string;
+		latitude: number;
+		longitude: number;
+		timezone: string;
+		days: ForecastDay[];
+		totals: {
+			generationKwh: number;
+			gridImportKwh: number;
+			gridExportKwh: number;
+			curtailedKwh: number;
+		};
+	};
+
+	type StoredSettings = {
+		locationQuery?: string;
+		panelStrings?: PanelString[];
+		batteryKwh?: number;
+		initialSocPercent?: number;
+		roundTripEfficiencyPercent?: number;
+		dailyUsageKwh?: number;
+		globalIrradianceBiasPercent?: number;
+		tempCoefficientPercentPerC?: number;
+		noctRiseAt800Wm2?: number;
+		sunnyDirectThresholdWm2?: number;
+		sunnyCloudMaxPercent?: number;
+		exportLimitKw?: number;
+	};
+
+	const STORAGE_KEY = 'solarcast.settings.v1';
+	const ukPostcodePattern = /^([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})$/i;
+	const compassOptions = [
+		{ key: 'N', label: 'North', bearing: 0 },
+		{ key: 'NE', label: 'North-East', bearing: 45 },
+		{ key: 'E', label: 'East', bearing: 90 },
+		{ key: 'SE', label: 'South-East', bearing: 135 },
+		{ key: 'S', label: 'South', bearing: 180 },
+		{ key: 'SW', label: 'South-West', bearing: 225 },
+		{ key: 'W', label: 'West', bearing: 270 },
+		{ key: 'NW', label: 'North-West', bearing: 315 }
+	] as const;
+	type CompassKey = (typeof compassOptions)[number]['key'];
+
+	let locationQuery = $state('Bristol');
+	let panelStrings = $state<PanelString[]>([
+		{ id: 1, name: 'Main roof', panelKw: 4.0, tilt: 35, azimuth: 0, lossPercent: 14, calibrationFactor: 1 }
+	]);
+	let batteryKwh = $state(6.5);
+	let initialSocPercent = $state(50);
+	let roundTripEfficiencyPercent = $state(90);
+	let dailyUsageKwh = $state(9);
+	let globalIrradianceBiasPercent = $state(100);
+	let tempCoefficientPercentPerC = $state(-0.4);
+	let noctRiseAt800Wm2 = $state(25);
+	let sunnyDirectThresholdWm2 = $state(120);
+	let sunnyCloudMaxPercent = $state(60);
+	let exportLimitKw = $state(3.68);
+
+	let loading = $state(false);
+	let errorMessage = $state('');
+	let result = $state<ForecastResult | null>(null);
+	let readyToPersist = $state(false);
+
+	const round = (value: number, dp = 2) => Number(value.toFixed(dp));
+
+	function normalizePanelString(input: Partial<PanelString>, id: number): PanelString {
+		return {
+			id,
+			name: String(input.name ?? `String ${id}`).slice(0, 40),
+			panelKw: Math.max(0, Number(input.panelKw ?? 0)),
+			tilt: Math.max(0, Math.min(90, Number(input.tilt ?? 35))),
+			azimuth: Math.max(-180, Math.min(180, Number(input.azimuth ?? 0))),
+			lossPercent: Math.max(0, Math.min(80, Number(input.lossPercent ?? 14))),
+			calibrationFactor: Math.max(0.5, Math.min(1.5, Number(input.calibrationFactor ?? 1)))
+		};
+	}
+
+	function getNextStringId() {
+		return panelStrings.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+	}
+
+	function addPanelString() {
+		const id = getNextStringId();
+		panelStrings = [
+			...panelStrings,
+			{ id, name: `String ${id}`, panelKw: 1.5, tilt: 35, azimuth: 0, lossPercent: 14, calibrationFactor: 1 }
+		];
+	}
+
+	function removePanelString(id: number) {
+		if (panelStrings.length <= 1) {
+			return;
+		}
+		panelStrings = panelStrings.filter((s) => s.id !== id);
+	}
+
+	function splitChargeDischargeEfficiency(roundTripEfficiency: number) {
+		const r = Math.max(0.5, Math.min(1, roundTripEfficiency / 100));
+		const half = Math.sqrt(r);
+		return { charge: half, discharge: half };
+	}
+
+	function extractDateFromIso(iso: string) {
+		return iso.slice(0, 10);
+	}
+
+	function dayNameFromDate(date: string) {
+		return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short' });
+	}
+
+	function weatherCodeToSummary(code: number) {
+		const map: Record<number, string> = {
+			0: 'Clear',
+			1: 'Mostly sunny',
+			2: 'Partly cloudy',
+			3: 'Overcast',
+			45: 'Fog',
+			48: 'Rime fog',
+			51: 'Light drizzle',
+			53: 'Drizzle',
+			55: 'Heavy drizzle',
+			56: 'Freezing drizzle',
+			57: 'Heavy freezing drizzle',
+			61: 'Light rain',
+			63: 'Rain',
+			65: 'Heavy rain',
+			66: 'Freezing rain',
+			67: 'Heavy freezing rain',
+			71: 'Light snow',
+			73: 'Snow',
+			75: 'Heavy snow',
+			77: 'Snow grains',
+			80: 'Light showers',
+			81: 'Showers',
+			82: 'Heavy showers',
+			85: 'Snow showers',
+			86: 'Heavy snow showers',
+			95: 'Thunderstorm',
+			96: 'Thunderstorm, hail possible',
+			99: 'Thunderstorm, heavy hail possible'
+		};
+
+		return map[code] ?? 'Mixed conditions';
+	}
+
+	function safeArray<T>(value: unknown): T[] {
+		return Array.isArray(value) ? (value as T[]) : [];
+	}
+
+	function normalizeAzimuth(value: number) {
+		if (value > 180) return value - 360;
+		if (value <= -180) return value + 360;
+		return value;
+	}
+
+	function azimuthFromCompassKey(key: string) {
+		const option = compassOptions.find((d) => d.key === key) ?? compassOptions[4];
+		return normalizeAzimuth(option.bearing - 180);
+	}
+
+	function compassKeyFromAzimuth(azimuth: number) {
+		const normalized = normalizeAzimuth(azimuth);
+		let best: CompassKey = 'S';
+		let bestDistance = Number.POSITIVE_INFINITY;
+
+		for (const option of compassOptions) {
+			const target = azimuthFromCompassKey(option.key);
+			const raw = Math.abs(normalized - target);
+			const wrapped = Math.min(raw, 360 - raw);
+			if (wrapped < bestDistance) {
+				bestDistance = wrapped;
+				best = option.key;
+			}
+		}
+
+		return best;
+	}
+
+	onMount(() => {
+		try {
+			const raw = localStorage.getItem(STORAGE_KEY);
+			if (!raw) {
+				readyToPersist = true;
+				return;
+			}
+
+			const parsed = JSON.parse(raw) as StoredSettings;
+			if (typeof parsed.locationQuery === 'string') {
+				locationQuery = parsed.locationQuery;
+			}
+
+			if (Array.isArray(parsed.panelStrings) && parsed.panelStrings.length > 0) {
+				panelStrings = parsed.panelStrings.map((item, index) => normalizePanelString(item, index + 1));
+			}
+
+			if (typeof parsed.batteryKwh === 'number') batteryKwh = Math.max(0, parsed.batteryKwh);
+			if (typeof parsed.initialSocPercent === 'number') {
+				initialSocPercent = Math.max(0, Math.min(100, parsed.initialSocPercent));
+			}
+			if (typeof parsed.roundTripEfficiencyPercent === 'number') {
+				roundTripEfficiencyPercent = Math.max(50, Math.min(100, parsed.roundTripEfficiencyPercent));
+			}
+			if (typeof parsed.dailyUsageKwh === 'number') dailyUsageKwh = Math.max(0, parsed.dailyUsageKwh);
+			if (typeof parsed.globalIrradianceBiasPercent === 'number') {
+				globalIrradianceBiasPercent = Math.max(70, Math.min(140, parsed.globalIrradianceBiasPercent));
+			}
+			if (typeof parsed.tempCoefficientPercentPerC === 'number') {
+				tempCoefficientPercentPerC = Math.max(-0.7, Math.min(-0.2, parsed.tempCoefficientPercentPerC));
+			}
+			if (typeof parsed.noctRiseAt800Wm2 === 'number') {
+				noctRiseAt800Wm2 = Math.max(10, Math.min(40, parsed.noctRiseAt800Wm2));
+			}
+			if (typeof parsed.sunnyDirectThresholdWm2 === 'number') {
+				sunnyDirectThresholdWm2 = Math.max(50, Math.min(400, parsed.sunnyDirectThresholdWm2));
+			}
+			if (typeof parsed.sunnyCloudMaxPercent === 'number') {
+				sunnyCloudMaxPercent = Math.max(10, Math.min(90, parsed.sunnyCloudMaxPercent));
+			}
+			if (typeof parsed.exportLimitKw === 'number') {
+				exportLimitKw = Math.max(0, Math.min(20, parsed.exportLimitKw));
+			}
+		} catch {
+			localStorage.removeItem(STORAGE_KEY);
+		} finally {
+			readyToPersist = true;
+		}
+	});
+
+	$effect(() => {
+		if (!readyToPersist) return;
+		if (typeof localStorage === 'undefined') return;
+
+		const payload: StoredSettings = {
+			locationQuery,
+			panelStrings,
+			batteryKwh,
+			initialSocPercent,
+			roundTripEfficiencyPercent,
+			dailyUsageKwh,
+			globalIrradianceBiasPercent,
+			tempCoefficientPercentPerC,
+			noctRiseAt800Wm2,
+			sunnyDirectThresholdWm2,
+			sunnyCloudMaxPercent,
+			exportLimitKw
+		};
+
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+	});
+
+	async function buildForecast() {
+		loading = true;
+		errorMessage = '';
+		result = null;
+
+		try {
+			const activeStrings = panelStrings
+				.map((s) => ({
+					...s,
+					panelKw: Math.max(0, Number(s.panelKw)),
+					tilt: Math.max(0, Math.min(90, Number(s.tilt))),
+					azimuth: Math.max(-180, Math.min(180, Number(s.azimuth))),
+					lossPercent: Math.max(0, Math.min(80, Number(s.lossPercent))),
+					calibrationFactor: Math.max(0.5, Math.min(1.5, Number(s.calibrationFactor)))
+				}))
+				.filter((s) => s.panelKw > 0);
+
+			if (!activeStrings.length) {
+				throw new Error('Add at least one panel string with kWp > 0.');
+			}
+
+			const query = locationQuery.trim();
+			const compactPostcode = query.replace(/\s+/g, '').toUpperCase();
+			const isPostcode = ukPostcodePattern.test(query);
+
+			let lat = Number.NaN;
+			let lon = Number.NaN;
+			let placeLabel = '';
+
+			if (isPostcode) {
+				const postcodesRes = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(compactPostcode)}`);
+				const postcodesJson = await postcodesRes.json();
+
+				if (postcodesRes.ok && postcodesJson?.status === 200 && postcodesJson?.result) {
+					lat = Number(postcodesJson.result.latitude);
+					lon = Number(postcodesJson.result.longitude);
+					const postcode = String(postcodesJson.result.postcode ?? compactPostcode);
+					const district = String(postcodesJson.result.admin_district ?? '');
+					placeLabel = district ? `${postcode}, ${district}` : postcode;
+				}
+			}
+
+			if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+				const geocodeUrl = new URL('https://geocoding-api.open-meteo.com/v1/search');
+				geocodeUrl.searchParams.set('name', query);
+				geocodeUrl.searchParams.set('count', '1');
+				geocodeUrl.searchParams.set('language', 'en');
+				geocodeUrl.searchParams.set('format', 'json');
+				geocodeUrl.searchParams.set('countryCode', 'GB');
+
+				const geoRes = await fetch(geocodeUrl);
+				if (!geoRes.ok) {
+					throw new Error(`Geocoding failed (${geoRes.status})`);
+				}
+
+				const geoJson = await geoRes.json();
+				const places = safeArray<Record<string, unknown>>(geoJson?.results);
+				if (!places.length) {
+					throw new Error('No UK location match found. Try a city, town, or full postcode.');
+				}
+
+				const place = places[0];
+				lat = Number(place.latitude);
+				lon = Number(place.longitude);
+				const placeName = String(place.name ?? 'Unknown');
+				const admin1 = String(place.admin1 ?? '');
+				placeLabel = admin1 ? `${placeName}, ${admin1}` : placeName;
+			}
+
+			if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+				throw new Error('Location coordinates were invalid.');
+			}
+
+			const dailyWeatherUrl = new URL('https://api.open-meteo.com/v1/forecast');
+			dailyWeatherUrl.searchParams.set('latitude', String(lat));
+			dailyWeatherUrl.searchParams.set('longitude', String(lon));
+			dailyWeatherUrl.searchParams.set('daily', 'weather_code');
+			dailyWeatherUrl.searchParams.set('forecast_days', '7');
+			dailyWeatherUrl.searchParams.set('timezone', 'auto');
+
+			const dailyRes = await fetch(dailyWeatherUrl);
+			if (!dailyRes.ok) {
+				throw new Error(`Daily forecast request failed (${dailyRes.status})`);
+			}
+
+			const dailyJson = await dailyRes.json();
+			const dailyDates = safeArray<string>(dailyJson?.daily?.time);
+			const dailyCodes = safeArray<number>(dailyJson?.daily?.weather_code);
+			const forecastByDate = new Map<string, string>();
+			for (let i = 0; i < Math.min(dailyDates.length, dailyCodes.length); i += 1) {
+				forecastByDate.set(dailyDates[i], weatherCodeToSummary(Number(dailyCodes[i])));
+			}
+
+			const hourlyWeatherUrl = new URL('https://api.open-meteo.com/v1/forecast');
+			hourlyWeatherUrl.searchParams.set('latitude', String(lat));
+			hourlyWeatherUrl.searchParams.set('longitude', String(lon));
+			hourlyWeatherUrl.searchParams.set('hourly', 'temperature_2m,cloud_cover,direct_radiation');
+			hourlyWeatherUrl.searchParams.set('forecast_days', '7');
+			hourlyWeatherUrl.searchParams.set('timezone', 'auto');
+
+			const hourlyWeatherRes = await fetch(hourlyWeatherUrl);
+			if (!hourlyWeatherRes.ok) {
+				throw new Error(`Hourly weather request failed (${hourlyWeatherRes.status})`);
+			}
+
+			const hourlyWeatherJson = await hourlyWeatherRes.json();
+			const weatherTimes = safeArray<string>(hourlyWeatherJson?.hourly?.time);
+			const temperatures = safeArray<number>(hourlyWeatherJson?.hourly?.temperature_2m);
+			const cloudCover = safeArray<number>(hourlyWeatherJson?.hourly?.cloud_cover);
+			const directRadiation = safeArray<number>(hourlyWeatherJson?.hourly?.direct_radiation);
+
+			const forecasts = await Promise.all(
+				activeStrings.map(async (s) => {
+					const forecastUrl = new URL('https://api.open-meteo.com/v1/forecast');
+					forecastUrl.searchParams.set('latitude', String(lat));
+					forecastUrl.searchParams.set('longitude', String(lon));
+					forecastUrl.searchParams.set('hourly', 'global_tilted_irradiance');
+					forecastUrl.searchParams.set('tilt', String(s.tilt));
+					forecastUrl.searchParams.set('azimuth', String(s.azimuth));
+					forecastUrl.searchParams.set('forecast_days', '7');
+					forecastUrl.searchParams.set('timezone', 'auto');
+
+					const wxRes = await fetch(forecastUrl);
+					if (!wxRes.ok) {
+						throw new Error(`Forecast request failed (${wxRes.status})`);
+					}
+
+					const wxJson = await wxRes.json();
+					return {
+						times: safeArray<string>(wxJson?.hourly?.time),
+						gti: safeArray<number>(wxJson?.hourly?.global_tilted_irradiance),
+						timezone: String(wxJson?.timezone ?? 'UTC'),
+						panelKw: s.panelKw,
+						systemDerate: 1 - s.lossPercent / 100,
+						calibrationFactor: s.calibrationFactor
+					};
+				})
+			);
+
+			const primary = forecasts[0];
+			if (!primary.times.length || !primary.gti.length || primary.times.length !== primary.gti.length) {
+				throw new Error('Forecast response was missing hourly solar data.');
+			}
+
+			for (const f of forecasts) {
+				if (f.times.length !== primary.times.length || f.gti.length !== primary.gti.length) {
+					throw new Error('Forecast data mismatch between panel strings.');
+				}
+			}
+			if (
+				weatherTimes.length !== primary.times.length ||
+				temperatures.length !== primary.times.length ||
+				cloudCover.length !== primary.times.length ||
+				directRadiation.length !== primary.times.length
+			) {
+				throw new Error('Hourly weather alignment error. Please try again.');
+			}
+
+			const batteryCapacity = Math.max(0, batteryKwh);
+			const usagePerHour = Math.max(0, dailyUsageKwh) / 24;
+			const eff = splitChargeDischargeEfficiency(roundTripEfficiencyPercent);
+			const biasFactor = Math.max(0.7, Math.min(1.4, globalIrradianceBiasPercent / 100));
+			const tempCoeff = Math.max(-0.007, Math.min(-0.002, tempCoefficientPercentPerC / 100));
+			const noctRiseFactor = Math.max(10, Math.min(40, noctRiseAt800Wm2));
+			const sunnyDirectThreshold = Math.max(50, Math.min(400, sunnyDirectThresholdWm2));
+			const sunnyCloudMax = Math.max(10, Math.min(90, sunnyCloudMaxPercent));
+			const exportPowerLimitKw = Math.max(0, Math.min(20, exportLimitKw));
+			let batterySoc = batteryCapacity * Math.max(0, Math.min(100, initialSocPercent)) / 100;
+			const byDate = new Map<string, ForecastDay>();
+			const dayHourCounts = new Map<string, number>();
+			const dayCloudSums = new Map<string, number>();
+
+			for (let i = 0; i < primary.times.length; i += 1) {
+				const date = extractDateFromIso(primary.times[i]);
+				const generationKwh = forecasts.reduce((sum, f) => {
+					const irradianceWm2 = Number(f.gti[i]) || 0;
+					const ambientTemp = Number(temperatures[i]) || 10;
+					const moduleTemp = ambientTemp + (irradianceWm2 / 800) * noctRiseFactor;
+					const temperatureFactor = Math.max(0.75, Math.min(1.1, 1 + tempCoeff * (moduleTemp - 25)));
+					return (
+						sum +
+						Math.max(
+							0,
+							f.panelKw *
+								(irradianceWm2 / 1000) *
+								f.systemDerate *
+								temperatureFactor *
+								f.calibrationFactor *
+								biasFactor
+						)
+					);
+				}, 0);
+				const cloud = Math.max(0, Math.min(100, Number(cloudCover[i]) || 0));
+				const direct = Math.max(0, Number(directRadiation[i]) || 0);
+				const isSunnyHour = direct >= sunnyDirectThreshold && cloud <= sunnyCloudMax;
+
+				const netKwh = generationKwh - usagePerHour;
+				let gridImport = 0;
+				let gridExport = 0;
+				let curtailed = 0;
+
+				if (netKwh >= 0) {
+					const storable = (batteryCapacity - batterySoc) / eff.charge;
+					const chargeIn = Math.max(0, Math.min(netKwh, storable));
+					batterySoc += chargeIn * eff.charge;
+					const exportBeforeLimit = netKwh - chargeIn;
+					// Model timestep is 1 hour, so kW limit maps to max hourly exported energy.
+					gridExport = Math.min(exportBeforeLimit, exportPowerLimitKw);
+					curtailed = Math.max(0, exportBeforeLimit - gridExport);
+				} else {
+					const deficit = -netKwh;
+					const maxDeliverable = batterySoc * eff.discharge;
+					const discharged = Math.min(deficit, maxDeliverable);
+					batterySoc -= discharged / eff.discharge;
+					gridImport = deficit - discharged;
+				}
+
+				const day = byDate.get(date) ?? {
+					date,
+					dayName: dayNameFromDate(date),
+					forecastSummary: forecastByDate.get(date) ?? 'Forecast unavailable',
+					avgCloudPercent: 0,
+					sunnyHours: 0,
+					generationKwh: 0,
+					gridImportKwh: 0,
+					gridExportKwh: 0,
+					curtailedKwh: 0,
+					endBatterySocKwh: batterySoc
+				};
+
+				day.generationKwh += generationKwh;
+				day.gridImportKwh += gridImport;
+				day.gridExportKwh += gridExport;
+				day.curtailedKwh += curtailed;
+				day.endBatterySocKwh = batterySoc;
+				day.sunnyHours += isSunnyHour ? 1 : 0;
+				byDate.set(date, day);
+
+				dayHourCounts.set(date, (dayHourCounts.get(date) ?? 0) + 1);
+				dayCloudSums.set(date, (dayCloudSums.get(date) ?? 0) + cloud);
+			}
+
+			const days = [...byDate.values()]
+				.sort((a, b) => a.date.localeCompare(b.date))
+				.slice(0, 7)
+				.map((d) => ({
+					...d,
+					avgCloudPercent: round((dayCloudSums.get(d.date) ?? 0) / Math.max(1, dayHourCounts.get(d.date) ?? 1), 0),
+					sunnyHours: round(d.sunnyHours, 0),
+					generationKwh: round(d.generationKwh),
+					gridImportKwh: round(d.gridImportKwh),
+					gridExportKwh: round(d.gridExportKwh),
+					curtailedKwh: round(d.curtailedKwh),
+					endBatterySocKwh: round(d.endBatterySocKwh)
+				}));
+
+			result = {
+				placeLabel,
+				latitude: round(lat, 4),
+				longitude: round(lon, 4),
+				timezone: primary.timezone,
+				days,
+				totals: {
+					generationKwh: round(days.reduce((sum, d) => sum + d.generationKwh, 0)),
+					gridImportKwh: round(days.reduce((sum, d) => sum + d.gridImportKwh, 0)),
+					gridExportKwh: round(days.reduce((sum, d) => sum + d.gridExportKwh, 0)),
+					curtailedKwh: round(days.reduce((sum, d) => sum + d.curtailedKwh, 0))
+				}
+			};
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'Unexpected error while building forecast.';
+		} finally {
+			loading = false;
+		}
+	}
+</script>
+
+<svelte:head>
+	<title>Solarcast</title>
+	<meta
+		name="description"
+		content="UK week-ahead solar generation estimate using Open-Meteo weather data and your system setup."
+	/>
+</svelte:head>
+
+<main>
+	<section class="card">
+		<h1>Solarcast</h1>
+		<p class="subtitle">7-day UK solar estimate powered by Open-Meteo</p>
+
+		<form
+			onsubmit={(event) => {
+				event.preventDefault();
+				void buildForecast();
+			}}
+		>
+			<label>
+				Location (UK)
+				<input bind:value={locationQuery} placeholder="e.g. Bristol or SW1A 1AA" required />
+			</label>
+
+			<div class="panel-section">
+				<div class="section-head">
+					<h3>Panel strings</h3>
+					<button class="ghost" type="button" onclick={addPanelString}>Add string</button>
+				</div>
+
+				{#each panelStrings as panel (panel.id)}
+					<div class="panel-row">
+						<label>
+							Name
+							<input bind:value={panel.name} placeholder={`String ${panel.id}`} />
+						</label>
+						<label>
+							kWp
+							<input bind:value={panel.panelKw} type="number" min="0" step="0.1" />
+						</label>
+						<label>
+							Tilt
+							<input bind:value={panel.tilt} type="number" min="0" max="90" step="1" />
+						</label>
+						<label>
+							Direction
+							<select
+								value={compassKeyFromAzimuth(panel.azimuth)}
+								onchange={(event) => {
+									const value = (event.currentTarget as HTMLSelectElement).value;
+									panel.azimuth = azimuthFromCompassKey(value);
+								}}
+							>
+								{#each compassOptions as option}
+									<option value={option.key}>{option.label}</option>
+								{/each}
+							</select>
+						</label>
+						<label>
+							Losses %
+							<input bind:value={panel.lossPercent} type="number" min="0" max="80" step="1" />
+						</label>
+						<label>
+							Cal
+							<input bind:value={panel.calibrationFactor} type="number" min="0.5" max="1.5" step="0.01" />
+						</label>
+						<button
+							type="button"
+							class="remove"
+							onclick={() => removePanelString(panel.id)}
+							disabled={panelStrings.length <= 1}
+						>
+							Remove
+						</button>
+					</div>
+				{/each}
+			</div>
+
+			<div class="grid">
+				<label>
+					Battery (kWh)
+					<input bind:value={batteryKwh} type="number" min="0" step="0.1" />
+				</label>
+
+				<label>
+					Start SoC (%)
+					<input bind:value={initialSocPercent} type="number" min="0" max="100" step="1" />
+				</label>
+
+				<label>
+					Round-trip efficiency (%)
+					<input bind:value={roundTripEfficiencyPercent} type="number" min="50" max="100" step="1" />
+				</label>
+
+				<label>
+					Daily usage (kWh)
+					<input bind:value={dailyUsageKwh} type="number" min="0" step="0.1" />
+				</label>
+			</div>
+
+			<details class="advanced">
+				<summary>Advanced forecast tuning</summary>
+				<div class="grid">
+					<label>
+						Forecast bias (%)
+						<input bind:value={globalIrradianceBiasPercent} type="number" min="70" max="140" step="1" />
+					</label>
+					<label>
+						Temp coeff (%/C)
+						<input bind:value={tempCoefficientPercentPerC} type="number" min="-0.7" max="-0.2" step="0.01" />
+					</label>
+					<label>
+						NOCT rise @800W/m2 (C)
+						<input bind:value={noctRiseAt800Wm2} type="number" min="10" max="40" step="1" />
+					</label>
+					<label>
+						Sunny direct threshold
+						<input bind:value={sunnyDirectThresholdWm2} type="number" min="50" max="400" step="10" />
+					</label>
+					<label>
+						Sunny cloud max (%)
+						<input bind:value={sunnyCloudMaxPercent} type="number" min="10" max="90" step="1" />
+					</label>
+					<label>
+						Export limit (kW, instant)
+						<input bind:value={exportLimitKw} type="number" min="0" max="20" step="0.1" />
+					</label>
+				</div>
+			</details>
+
+			<button disabled={loading}>
+				{#if loading}
+					Calculating...
+				{:else}
+					Build forecast
+				{/if}
+			</button>
+		</form>
+	</section>
+
+	{#if errorMessage}
+		<p class="error">{errorMessage}</p>
+	{/if}
+
+	{#if result}
+		<section class="card results">
+			<h2>{result.placeLabel}</h2>
+			<p class="meta">{result.latitude}, {result.longitude} ({result.timezone})</p>
+
+			<div class="totals">
+				<div>
+					<span>Week generation</span>
+					<strong>{result.totals.generationKwh} kWh</strong>
+				</div>
+				<div>
+					<span>Grid import</span>
+					<strong>{result.totals.gridImportKwh} kWh</strong>
+				</div>
+				<div>
+					<span>Grid export</span>
+					<strong>{result.totals.gridExportKwh} kWh</strong>
+				</div>
+				<div>
+					<span>Curtailed</span>
+					<strong>{result.totals.curtailedKwh} kWh</strong>
+				</div>
+			</div>
+
+			<table>
+				<thead>
+					<tr>
+						<th>Date</th>
+						<th>Day</th>
+						<th>Forecast</th>
+						<th>Cloud</th>
+						<th>Sunny hrs</th>
+						<th>Generation</th>
+							<th>Import</th>
+							<th>Export</th>
+							<th>Curtailed</th>
+							<th>End battery SoC</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each result.days as day}
+						<tr>
+							<td>{day.date}</td>
+							<td>{day.dayName}</td>
+							<td>{day.forecastSummary}</td>
+							<td>{day.avgCloudPercent}%</td>
+							<td>{day.sunnyHours}</td>
+							<td>{day.generationKwh} kWh</td>
+								<td>{day.gridImportKwh} kWh</td>
+								<td>{day.gridExportKwh} kWh</td>
+								<td>{day.curtailedKwh} kWh</td>
+								<td>{day.endBatterySocKwh} kWh</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+
+			<p class="note">
+				Azimuth means panel compass direction. This app uses Open-Meteo convention: South = 0, East = -90,
+				West = 90, North = +/-180.
+			</p>
+			<p class="note">
+				Generation now includes a panel temperature derate model and optional per-string calibration factor
+				(1.00 = baseline).
+			</p>
+			<p class="note">
+				If your output is consistently higher than forecast, increase Forecast bias above 100% or raise a
+				string's Cal value above 1.00.
+			</p>
+			<p class="note">
+				Export limit is an instantaneous kW cap. In this hourly model, we apply it to each hour's average export.
+				Extra energy beyond battery + export cap is shown as curtailed.
+			</p>
+			<p class="note">
+				Model notes: this is a simplified estimate using forecast irradiance per panel string, then battery and
+				fixed demand simulation.
+			</p>
+		</section>
+	{/if}
+</main>
+
+<style>
+	:global(body) {
+		margin: 0;
+		font-family: 'Avenir Next', Avenir, 'Segoe UI', sans-serif;
+		background: radial-gradient(circle at top, #dbeafe 0%, #f8fafc 50%, #eef2ff 100%);
+		color: #0f172a;
+	}
+
+	main {
+		max-width: 980px;
+		margin: 0 auto;
+		padding: 2rem 1rem 3rem;
+	}
+
+	.card {
+		background: rgba(255, 255, 255, 0.9);
+		backdrop-filter: blur(4px);
+		border-radius: 1rem;
+		padding: 1.25rem;
+		box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+	}
+
+	h1 {
+		margin: 0;
+		font-size: 2rem;
+	}
+
+	h3 {
+		margin: 0;
+		font-size: 1rem;
+	}
+
+	.subtitle {
+		margin: 0.25rem 0 1.25rem;
+		color: #475569;
+	}
+
+	form {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		font-size: 0.92rem;
+		font-weight: 600;
+	}
+
+	input {
+		font: inherit;
+		padding: 0.55rem 0.7rem;
+		border: 1px solid #cbd5e1;
+		border-radius: 0.55rem;
+		background: #fff;
+	}
+
+	select {
+		font: inherit;
+		padding: 0.55rem 0.7rem;
+		border: 1px solid #cbd5e1;
+		border-radius: 0.55rem;
+		background: #fff;
+	}
+
+	.section-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.55rem;
+	}
+
+	.panel-section {
+		padding: 0.8rem;
+		border: 1px solid #e2e8f0;
+		border-radius: 0.75rem;
+		background: #f8fafc;
+	}
+
+	.panel-row {
+		display: grid;
+		grid-template-columns: 1.25fr repeat(5, minmax(110px, 1fr)) auto;
+		gap: 0.6rem;
+		align-items: end;
+		padding: 0.65rem;
+		border: 1px solid #e2e8f0;
+		border-radius: 0.65rem;
+		background: #fff;
+	}
+
+	.panel-row + .panel-row {
+		margin-top: 0.6rem;
+	}
+
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+		gap: 0.8rem;
+	}
+
+	.advanced {
+		padding: 0.8rem;
+		border: 1px solid #e2e8f0;
+		border-radius: 0.75rem;
+		background: #f8fafc;
+	}
+
+	.advanced summary {
+		cursor: pointer;
+		font-weight: 700;
+		margin-bottom: 0.8rem;
+	}
+
+	button {
+		font: inherit;
+		font-weight: 700;
+		padding: 0.7rem 1rem;
+		border: none;
+		border-radius: 0.7rem;
+		background: linear-gradient(135deg, #0ea5e9, #22c55e);
+		color: #fff;
+		cursor: pointer;
+	}
+
+	button:disabled {
+		opacity: 0.6;
+		cursor: wait;
+	}
+
+	button.ghost,
+	button.remove {
+		background: #e2e8f0;
+		color: #0f172a;
+		padding: 0.55rem 0.75rem;
+	}
+
+	button.remove:disabled {
+		cursor: not-allowed;
+		opacity: 0.5;
+	}
+
+	.error {
+		margin: 1rem 0 0;
+		padding: 0.8rem;
+		border-radius: 0.7rem;
+		background: #fee2e2;
+		color: #991b1b;
+		font-weight: 600;
+	}
+
+	.results {
+		margin-top: 1rem;
+	}
+
+	h2 {
+		margin: 0;
+	}
+
+	.meta {
+		margin: 0.25rem 0 1rem;
+		color: #64748b;
+	}
+
+	.totals {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+		gap: 0.7rem;
+		margin-bottom: 1rem;
+	}
+
+	.totals div {
+		padding: 0.8rem;
+		border-radius: 0.7rem;
+		background: #f1f5f9;
+	}
+
+	.totals span {
+		display: block;
+		font-size: 0.85rem;
+		color: #475569;
+	}
+
+	.totals strong {
+		font-size: 1.1rem;
+	}
+
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.92rem;
+	}
+
+	th,
+	td {
+		padding: 0.55rem;
+		text-align: left;
+		border-bottom: 1px solid #e2e8f0;
+	}
+
+	.note {
+		margin-top: 1rem;
+		font-size: 0.85rem;
+		color: #475569;
+	}
+
+	@media (max-width: 920px) {
+		.panel-row {
+			grid-template-columns: repeat(2, minmax(120px, 1fr));
+		}
+	}
+
+	@media (max-width: 720px) {
+		table {
+			font-size: 0.82rem;
+		}
+
+		th,
+		td {
+			padding: 0.45rem;
+		}
+	}
+</style>
