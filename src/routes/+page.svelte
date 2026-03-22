@@ -87,6 +87,11 @@
 	let errorMessage = $state('');
 	let result = $state<ForecastResult | null>(null);
 	const chartModel = $derived(result ? buildChartModel(result.days) : null);
+	let tooltipVisible = $state(false);
+	let tooltipTitle = $state('');
+	let tooltipItems = $state<{ label: string; color: string; value: string }[]>([]);
+	let tooltipX = $state(0);
+	let tooltipY = $state(0);
 	let readyToPersist = $state(false);
 
 	const round = (value: number, dp = 2) => Number(value.toFixed(dp));
@@ -186,13 +191,50 @@
 		return `${start} to ${end}`;
 	}
 
+	function weatherIconFromSummary(summary: string) {
+		const s = summary.toLowerCase();
+		if (s.includes('thunder')) return '⛈️';
+		if (s.includes('snow')) return '❄️';
+		if (s.includes('freezing')) return '🥶';
+		if (s.includes('drizzle')) return '🌦️';
+		if (s.includes('rain') || s.includes('showers')) return '🌧️';
+		if (s.includes('fog')) return '🌫️';
+		if (s.includes('overcast')) return '☁️';
+		if (s.includes('partly')) return '⛅';
+		if (s.includes('mostly sunny') || s.includes('clear')) return '☀️';
+		return '🌤️';
+	}
+
+	function showTooltip(event: MouseEvent | FocusEvent, title: string, items: { label: string; color: string; value: string }[]) {
+		const target = event.currentTarget as Element | null;
+		if (!target) return;
+		const container = target?.closest('.chart-wrap') as HTMLElement | null;
+		if (!container) return;
+
+		const containerRect = container.getBoundingClientRect();
+		const targetRect = target.getBoundingClientRect();
+		const clientX = 'clientX' in event ? event.clientX : targetRect.left + targetRect.width / 2;
+		const clientY = 'clientY' in event ? event.clientY : targetRect.top;
+		tooltipTitle = title;
+		tooltipItems = items;
+		tooltipX = clientX - containerRect.left + 10;
+		tooltipY = clientY - containerRect.top - 12;
+		tooltipVisible = true;
+	}
+
+	function hideTooltip() {
+		tooltipVisible = false;
+		tooltipTitle = '';
+		tooltipItems = [];
+	}
+
 	function buildChartModel(days: ForecastDay[]) {
 		const chart = {
 			width: 860,
-			height: 280,
-			marginTop: 20,
+			height: 320,
+			marginTop: 34,
 			marginRight: 16,
-			marginBottom: 44,
+			marginBottom: 92,
 			marginLeft: 44
 		};
 		const innerWidth = chart.width - chart.marginLeft - chart.marginRight;
@@ -200,17 +242,28 @@
 		const dayCount = Math.max(1, days.length);
 		const groupWidth = innerWidth / dayCount;
 		const barWidth = Math.max(6, Math.min(18, groupWidth * 0.16));
-		const series = [
+		const seriesBase = [
 			{ key: 'generationKwh', color: '#16a34a', label: 'Generation' },
 			{ key: 'gridImportKwh', color: '#0ea5e9', label: 'Import' },
 			{ key: 'gridExportKwh', color: '#f59e0b', label: 'Export' },
 			{ key: 'curtailedKwh', color: '#ef4444', label: 'Curtailed' }
 		] as const;
+		const series = seriesBase.map((s) => ({
+			...s,
+			hasData: days.some((d) => d[s.key] > 0)
+		}));
 
-		const maxEnergy = Math.max(
+		const maxEnergyRaw = Math.max(
 			0.1,
 			...days.flatMap((d) => [d.generationKwh, d.gridImportKwh, d.gridExportKwh, d.curtailedKwh])
 		);
+		const maxEnergy = Math.max(1, Math.ceil(maxEnergyRaw / 5) * 5);
+		const energyTicks = [0, 0.25, 0.5, 0.75, 1].map((r) => maxEnergy * r);
+		const cloudPoints = days.map((d, i) => {
+			const x = chart.marginLeft + groupWidth * i + groupWidth / 2;
+			const y = chart.marginTop + innerHeight * (1 - d.avgCloudPercent / 100);
+			return { i, x, y, cloud: d.avgCloudPercent };
+		});
 		const cloudPath = days
 			.map((d, i) => {
 				const x = chart.marginLeft + groupWidth * i + groupWidth / 2;
@@ -219,7 +272,7 @@
 			})
 			.join(' ');
 
-		return { chart, innerWidth, innerHeight, groupWidth, barWidth, series, maxEnergy, cloudPath };
+		return { chart, innerWidth, innerHeight, groupWidth, barWidth, series, maxEnergy, energyTicks, cloudPoints, cloudPath };
 	}
 
 	function normalizeAzimuth(value: number) {
@@ -632,6 +685,7 @@
 				>
 					<label>
 						Location (UK)
+						<span class="helper-text">Use UK town or postcode</span>
 						<input bind:value={locationQuery} placeholder="e.g. Bristol or SW1A 1AA" required />
 					</label>
 
@@ -807,14 +861,50 @@
 
 					<div class="chart-wrap">
 						<div class="legend">
-							<span class="chip chip-gen">Generation</span>
-							<span class="chip chip-imp">Import</span>
-							<span class="chip chip-exp">Export</span>
-							<span class="chip chip-cur">Curtailed</span>
-							<span class="chip chip-cloud">Cloud % (line)</span>
+							{#if chartModel}
+								{#each chartModel.series as s}
+									<span class={`chip ${s.hasData ? '' : 'chip-disabled'}`}>
+										<span class="swatch" style={`background:${s.color}`}></span>
+										{s.label}
+									</span>
+								{/each}
+							{/if}
+							<span class="chip">
+								<span class="swatch line-swatch"></span>
+								Cloud %
+							</span>
 						</div>
 						{#if chartModel}
 							<svg viewBox={`0 0 ${chartModel.chart.width} ${chartModel.chart.height}`} aria-label="Weekly weather and energy chart">
+								<defs>
+									<linearGradient id="chart-bg" x1="0" y1="0" x2="0" y2="1">
+										<stop offset="0%" stop-color="#f8fbff" />
+										<stop offset="100%" stop-color="#f1f5f9" />
+									</linearGradient>
+								</defs>
+								<rect
+									x={chartModel.chart.marginLeft - 8}
+									y={chartModel.chart.marginTop - 8}
+									width={chartModel.innerWidth + 16}
+									height={chartModel.innerHeight + 16}
+									rx="10"
+									fill="url(#chart-bg)"
+								/>
+								{#each chartModel.energyTicks as tick}
+									{@const yTick = chartModel.chart.marginTop + chartModel.innerHeight * (1 - tick / chartModel.maxEnergy)}
+									<line
+										x1={chartModel.chart.marginLeft}
+										y1={yTick}
+										x2={chartModel.chart.marginLeft + chartModel.innerWidth}
+										y2={yTick}
+										stroke="#d9e2ef"
+										stroke-dasharray="3 4"
+									/>
+									<text x={chartModel.chart.marginLeft - 8} y={yTick + 3} text-anchor="end" class="axis">
+										{tick}
+									</text>
+								{/each}
+
 								<line
 									x1={chartModel.chart.marginLeft}
 									y1={chartModel.chart.marginTop + chartModel.innerHeight}
@@ -831,6 +921,25 @@
 								/>
 
 								{#each result.days as day, i}
+									{@const groupX = chartModel.chart.marginLeft + chartModel.groupWidth * i}
+									<rect
+										x={groupX}
+										y={chartModel.chart.marginTop}
+										width={chartModel.groupWidth}
+										height={chartModel.innerHeight}
+										fill="transparent"
+										role="img"
+										aria-label={`${day.dayName} ${day.date} grouped data`}
+										onmousemove={(event) =>
+											showTooltip(event, `${day.dayName} ${day.date}`, [
+												{ label: 'Generation', color: chartModel.series[0].color, value: `${day.generationKwh} kWh` },
+												{ label: 'Import', color: chartModel.series[1].color, value: `${day.gridImportKwh} kWh` },
+												{ label: 'Export', color: chartModel.series[2].color, value: `${day.gridExportKwh} kWh` },
+												{ label: 'Curtailed', color: chartModel.series[3].color, value: `${day.curtailedKwh} kWh` },
+												{ label: 'Cloud', color: '#7c3aed', value: `${day.avgCloudPercent}%` }
+											])}
+										onmouseleave={hideTooltip}
+									/>
 									{#each chartModel.series as s, si}
 										{@const value = day[s.key]}
 										{@const h = (value / chartModel.maxEnergy) * chartModel.innerHeight}
@@ -839,14 +948,25 @@
 										<rect x={x} y={y} width={chartModel.barWidth - 2} height={h} fill={s.color} rx="2" />
 									{/each}
 									{@const dayX = chartModel.chart.marginLeft + chartModel.groupWidth * i + chartModel.groupWidth / 2}
-									<text x={dayX} y={chartModel.chart.marginTop + chartModel.innerHeight + 16} text-anchor="middle" class="axis">
+									<text
+										x={dayX}
+										y={chartModel.chart.marginTop + chartModel.innerHeight + 24}
+										text-anchor="middle"
+										class="axis x-axis-label"
+									>
 										{day.dayName}
+									</text>
+									<text x={dayX} y={chartModel.chart.marginTop + chartModel.innerHeight + 64} text-anchor="middle" class="weather-icon">
+										{weatherIconFromSummary(day.forecastSummary)}
 									</text>
 								{/each}
 
 								<path d={chartModel.cloudPath} fill="none" stroke="#7c3aed" stroke-width="2.5" />
+								{#each chartModel.cloudPoints as p}
+									<circle cx={p.x} cy={p.y} r="4" fill="#7c3aed" />
+								{/each}
 
-								<text x={10} y={chartModel.chart.marginTop + 8} class="axis">Energy (kWh)</text>
+								<text x={2} y={chartModel.chart.marginTop - 14} class="axis y-axis-label">Energy (kWh)</text>
 								<text
 									x={chartModel.chart.marginLeft + chartModel.innerWidth - 6}
 									y={chartModel.chart.marginTop + 12}
@@ -856,6 +976,18 @@
 									Cloud %
 								</text>
 							</svg>
+							{#if tooltipVisible}
+								<div class="chart-tooltip" style={`left:${tooltipX}px;top:${tooltipY}px;`}>
+									<div class="tooltip-title">{tooltipTitle}</div>
+									{#each tooltipItems as item}
+										<div class="tooltip-row">
+											<span class="swatch" style={`background:${item.color}`}></span>
+											<span>{item.label}</span>
+											<strong>{item.value}</strong>
+										</div>
+									{/each}
+								</div>
+							{/if}
 						{/if}
 					</div>
 
@@ -983,6 +1115,12 @@
 		gap: 0.35rem;
 		font-size: 0.92rem;
 		font-weight: 600;
+	}
+
+	.helper-text {
+		font-size: 0.78rem;
+		font-weight: 500;
+		color: #64748b;
 	}
 
 	input {
@@ -1170,32 +1308,52 @@
 
 	.chart-wrap {
 		margin: 0.8rem 0 1rem;
-		padding: 0.8rem;
+		padding: 0.95rem;
 		border: 1px solid #e2e8f0;
 		border-radius: 0.75rem;
-		background: #ffffff;
+		background: linear-gradient(165deg, #ffffff, #f8fafc);
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+		position: relative;
 	}
 
 	.legend {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.45rem;
-		margin-bottom: 0.6rem;
+		margin-bottom: 0.7rem;
 	}
 
 	.chip {
-		display: inline-block;
-		padding: 0.2rem 0.5rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.22rem 0.55rem;
 		border-radius: 999px;
 		font-size: 0.75rem;
 		color: #0f172a;
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
 	}
 
-	.chip-gen { background: #dcfce7; }
-	.chip-imp { background: #dbeafe; }
-	.chip-exp { background: #fef3c7; }
-	.chip-cur { background: #fee2e2; }
-	.chip-cloud { background: #ede9fe; }
+	.chip-disabled {
+		opacity: 0.4;
+		filter: grayscale(0.6);
+	}
+
+	.swatch {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.line-swatch {
+		background: transparent;
+		border-radius: 0;
+		border-top: 2px solid #7c3aed;
+		width: 12px;
+		height: 0;
+	}
 
 	svg {
 		width: 100%;
@@ -1206,6 +1364,46 @@
 	.axis {
 		font-size: 10px;
 		fill: #475569;
+	}
+
+	.x-axis-label {
+		font-size: 14px;
+		font-weight: 700;
+	}
+
+	.y-axis-label {
+		font-size: 11px;
+		font-weight: 700;
+	}
+
+	.weather-icon {
+		font-size: 39px;
+	}
+
+	.chart-tooltip {
+		position: absolute;
+		transform: translate(0, -100%);
+		background: rgba(15, 23, 42, 0.94);
+		color: #f8fafc;
+		padding: 0.45rem 0.55rem;
+		border-radius: 0.45rem;
+		font-size: 0.78rem;
+		white-space: nowrap;
+		pointer-events: none;
+		z-index: 4;
+		box-shadow: 0 6px 18px rgba(2, 6, 23, 0.25);
+	}
+
+	.tooltip-title {
+		font-weight: 700;
+		margin-bottom: 0.25rem;
+	}
+
+	.tooltip-row {
+		display: grid;
+		grid-template-columns: auto 1fr auto;
+		align-items: center;
+		gap: 0.35rem;
 	}
 
 	table {
