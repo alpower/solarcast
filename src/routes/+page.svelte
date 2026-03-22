@@ -1118,6 +1118,8 @@
 	:global(html),
 	:global(body) {
 		height: 100%;
+		max-width: 100%;
+		overflow-x: hidden;
 	}
 
 	:global(body) {
@@ -1131,6 +1133,7 @@
 		max-width: 1720px;
 		margin: 0 auto;
 		padding: 2rem 1rem 3rem;
+		overflow-x: clip;
 	}
 
 	.app-layout {
@@ -1495,9 +1498,8 @@
 		font-weight: 600;
 		line-height: 1.35;
 		text-align: left;
-		opacity: 0;
+		display: none;
 		pointer-events: none;
-		transition: opacity 140ms ease;
 		z-index: 2;
 	}
 
@@ -1514,7 +1516,7 @@
 
 	.info-tip:hover .info-bubble,
 	.info-tip:focus-visible .info-bubble {
-		opacity: 1;
+		display: block;
 	}
 
 	.totals strong {
