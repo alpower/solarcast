@@ -51,6 +51,7 @@
 		sunnyDirectThresholdWm2?: number;
 		sunnyCloudMaxPercent?: number;
 		exportLimitKw?: number;
+		lastResult?: ForecastResult | null;
 	};
 
 	const STORAGE_KEY = 'solarcast.settings.v1';
@@ -174,6 +175,17 @@
 		return Array.isArray(value) ? (value as T[]) : [];
 	}
 
+	function formatDateForRange(date: string) {
+		return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+	}
+
+	function forecastDateRange(days: ForecastDay[]) {
+		if (!days.length) return '';
+		const start = formatDateForRange(days[0].date);
+		const end = formatDateForRange(days[days.length - 1].date);
+		return `${start} to ${end}`;
+	}
+
 	function buildChartModel(days: ForecastDay[]) {
 		const chart = {
 			width: 860,
@@ -287,6 +299,9 @@
 			if (typeof parsed.exportLimitKw === 'number') {
 				exportLimitKw = Math.max(0, Math.min(20, parsed.exportLimitKw));
 			}
+			if (parsed.lastResult && Array.isArray(parsed.lastResult.days) && parsed.lastResult.days.length > 0) {
+				result = parsed.lastResult;
+			}
 		} catch {
 			localStorage.removeItem(STORAGE_KEY);
 		} finally {
@@ -310,7 +325,8 @@
 			noctRiseAt800Wm2,
 			sunnyDirectThresholdWm2,
 			sunnyCloudMaxPercent,
-			exportLimitKw
+			exportLimitKw,
+			lastResult: result
 		};
 
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -740,6 +756,8 @@
 					<button disabled={loading}>
 						{#if loading}
 							Calculating...
+						{:else if result}
+							Rebuild forecast
 						{:else}
 							Build forecast
 						{/if}
@@ -755,8 +773,18 @@
 		<div class="right-col">
 			{#if result}
 				<section class="card results">
-					<h2>{result.placeLabel}</h2>
-					<p class="meta">{result.latitude}, {result.longitude} ({result.timezone})</p>
+					<div class="results-head">
+						<div>
+							<h2>{result.placeLabel}</h2>
+							<p class="meta">
+								<strong>{forecastDateRange(result.days)}</strong> · {result.latitude}, {result.longitude} (
+								{result.timezone})
+							</p>
+						</div>
+						<button type="button" class="ghost" onclick={() => void buildForecast()} disabled={loading}>
+							Rebuild forecast
+						</button>
+					</div>
 
 					<div class="totals">
 						<div>
@@ -1104,6 +1132,14 @@
 		margin: 0;
 	}
 
+	.results-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 0.8rem;
+		margin-bottom: 0.25rem;
+	}
+
 	.meta {
 		margin: 0.25rem 0 1rem;
 		color: #64748b;
@@ -1210,6 +1246,15 @@
 	}
 
 	@media (max-width: 720px) {
+		.results-head {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.results-head .ghost {
+			width: 100%;
+		}
+
 		.panel-fields {
 			grid-template-columns: 1fr;
 		}
