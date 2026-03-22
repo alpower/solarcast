@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import favicon from '$lib/assets/favicon.svg';
 
 	type PanelString = {
 		id: number;
@@ -674,7 +675,7 @@
 	<div class="app-layout">
 		<div class="left-col">
 			<section class="card form-card">
-				<h1>Solarcast</h1>
+				<h1 class="brand-title"><img src={favicon} alt="" class="brand-icon" />Solarcast</h1>
 				<p class="subtitle">7-day UK solar estimate powered by Open-Meteo</p>
 
 				<form
@@ -1097,6 +1098,18 @@
 	h1 {
 		margin: 0;
 		font-size: 2rem;
+	}
+
+	.brand-title {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+	}
+
+	.brand-icon {
+		width: 1.6rem;
+		height: 1.6rem;
+		flex-shrink: 0;
 	}
 
 	h3 {
