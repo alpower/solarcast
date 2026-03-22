@@ -10,6 +10,7 @@
 		azimuth: number;
 		lossPercent: number;
 		calibrationFactor: number;
+		expanded: boolean;
 	};
 
 	type ForecastDay = {
@@ -71,7 +72,7 @@
 
 	let locationQuery = $state('Bristol');
 	let panelStrings = $state<PanelString[]>([
-		{ id: 1, name: 'Main roof', panelKw: 4.0, tilt: 35, azimuth: 0, lossPercent: 14, calibrationFactor: 1 }
+		{ id: 1, name: 'Main roof', panelKw: 4.0, tilt: 35, azimuth: 0, lossPercent: 14, calibrationFactor: 1, expanded: true }
 	]);
 	let batteryKwh = $state(6.5);
 	let initialSocPercent = $state(50);
@@ -105,7 +106,8 @@
 			tilt: Math.max(0, Math.min(90, Number(input.tilt ?? 35))),
 			azimuth: Math.max(-180, Math.min(180, Number(input.azimuth ?? 0))),
 			lossPercent: Math.max(0, Math.min(80, Number(input.lossPercent ?? 14))),
-			calibrationFactor: Math.max(0.5, Math.min(1.5, Number(input.calibrationFactor ?? 1)))
+			calibrationFactor: Math.max(0.5, Math.min(1.5, Number(input.calibrationFactor ?? 1))),
+			expanded: typeof input.expanded === 'boolean' ? input.expanded : true
 		};
 	}
 
@@ -117,7 +119,16 @@
 		const id = getNextStringId();
 		panelStrings = [
 			...panelStrings,
-			{ id, name: `String ${id}`, panelKw: 1.5, tilt: 35, azimuth: 0, lossPercent: 14, calibrationFactor: 1 }
+			{
+				id,
+				name: `String ${id}`,
+				panelKw: 1.5,
+				tilt: 35,
+				azimuth: 0,
+				lossPercent: 14,
+				calibrationFactor: 1,
+				expanded: true
+			}
 		];
 	}
 
@@ -687,7 +698,7 @@
 					<label>
 						Location (UK)
 						<span class="helper-text">Use UK town or postcode</span>
-						<input bind:value={locationQuery} placeholder="e.g. Bristol or SW1A 1AA" required />
+						<input data-1p-ignore data-lpignore="true" bind:value={locationQuery} placeholder="e.g. Bristol or SW1A 1AA" required />
 					</label>
 
 					<div class="panel-section">
@@ -697,7 +708,13 @@
 						</div>
 
 						{#each panelStrings as panel (panel.id)}
-							<details class="panel-item" open={panelStrings.length === 1}>
+							<details
+								class="panel-item"
+								open={panel.expanded}
+								ontoggle={(event) => {
+									panel.expanded = (event.currentTarget as HTMLDetailsElement).open;
+								}}
+							>
 								<summary>
 									<span class="panel-title">{panel.name || `String ${panel.id}`}</span>
 									<span class="panel-meta">
@@ -709,15 +726,15 @@
 								<div class="panel-fields">
 									<label>
 										Name
-										<input bind:value={panel.name} placeholder={`String ${panel.id}`} />
+										<input data-1p-ignore data-lpignore="true" bind:value={panel.name} placeholder={`String ${panel.id}`} />
 									</label>
 									<label>
 										kWp
-										<input bind:value={panel.panelKw} type="number" min="0" step="0.1" />
+										<input data-1p-ignore data-lpignore="true" bind:value={panel.panelKw} type="number" min="0" step="0.1" />
 									</label>
 									<label>
 										Tilt
-										<input bind:value={panel.tilt} type="number" min="0" max="90" step="1" />
+										<input data-1p-ignore data-lpignore="true" bind:value={panel.tilt} type="number" min="0" max="90" step="1" />
 									</label>
 									<label>
 										Direction
@@ -735,11 +752,11 @@
 									</label>
 									<label>
 										Losses %
-										<input bind:value={panel.lossPercent} type="number" min="0" max="80" step="1" />
+										<input data-1p-ignore data-lpignore="true" bind:value={panel.lossPercent} type="number" min="0" max="80" step="1" />
 									</label>
 									<label>
 										Cal
-										<input bind:value={panel.calibrationFactor} type="number" min="0.5" max="1.5" step="0.01" />
+										<input data-1p-ignore data-lpignore="true" bind:value={panel.calibrationFactor} type="number" min="0.5" max="1.5" step="0.01" />
 									</label>
 								</div>
 								<div class="panel-actions">
@@ -759,22 +776,22 @@
 					<div class="grid">
 						<label>
 							Battery (kWh)
-							<input bind:value={batteryKwh} type="number" min="0" step="0.1" />
+							<input data-1p-ignore data-lpignore="true" bind:value={batteryKwh} type="number" min="0" step="0.1" />
 						</label>
 
 						<label>
 							Start SoC (%)
-							<input bind:value={initialSocPercent} type="number" min="0" max="100" step="1" />
+							<input data-1p-ignore data-lpignore="true" bind:value={initialSocPercent} type="number" min="0" max="100" step="1" />
 						</label>
 
 						<label>
 							Round-trip efficiency (%)
-							<input bind:value={roundTripEfficiencyPercent} type="number" min="50" max="100" step="1" />
+							<input data-1p-ignore data-lpignore="true" bind:value={roundTripEfficiencyPercent} type="number" min="50" max="100" step="1" />
 						</label>
 
 						<label>
 							Daily usage (kWh)
-							<input bind:value={dailyUsageKwh} type="number" min="0" step="0.1" />
+							<input data-1p-ignore data-lpignore="true" bind:value={dailyUsageKwh} type="number" min="0" step="0.1" />
 						</label>
 					</div>
 
@@ -784,32 +801,32 @@
 							<label>
 								Forecast bias (%)
 								<span class="helper-text">Overall output scaling. Raise if forecasts are consistently low.</span>
-								<input bind:value={globalIrradianceBiasPercent} type="number" min="70" max="140" step="1" />
+								<input data-1p-ignore data-lpignore="true" bind:value={globalIrradianceBiasPercent} type="number" min="70" max="140" step="1" />
 							</label>
 							<label>
 								Temp coeff (%/C)
 								<span class="helper-text">Panel power change per deg C above 25C (usually negative).</span>
-								<input bind:value={tempCoefficientPercentPerC} type="number" min="-0.7" max="-0.2" step="0.01" />
+								<input data-1p-ignore data-lpignore="true" bind:value={tempCoefficientPercentPerC} type="number" min="-0.7" max="-0.2" step="0.01" />
 							</label>
 							<label>
 								NOCT rise @800W/m2 (C)
 								<span class="helper-text">Estimated panel temperature rise above ambient at strong sun.</span>
-								<input bind:value={noctRiseAt800Wm2} type="number" min="10" max="40" step="1" />
+								<input data-1p-ignore data-lpignore="true" bind:value={noctRiseAt800Wm2} type="number" min="10" max="40" step="1" />
 							</label>
 							<label>
 								Sunny direct threshold
 								<span class="helper-text">Hourly direct radiation needed to count as a sunny hour.</span>
-								<input bind:value={sunnyDirectThresholdWm2} type="number" min="50" max="400" step="10" />
+								<input data-1p-ignore data-lpignore="true" bind:value={sunnyDirectThresholdWm2} type="number" min="50" max="400" step="10" />
 							</label>
 							<label>
 								Sunny cloud max (%)
 								<span class="helper-text">Maximum cloud cover allowed for a sunny-hour count.</span>
-								<input bind:value={sunnyCloudMaxPercent} type="number" min="10" max="90" step="1" />
+								<input data-1p-ignore data-lpignore="true" bind:value={sunnyCloudMaxPercent} type="number" min="10" max="90" step="1" />
 							</label>
 							<label>
 								Export limit (kW, instant)
 								<span class="helper-text">Grid export power cap from your inverter/export settings.</span>
-								<input bind:value={exportLimitKw} type="number" min="0" max="20" step="0.1" />
+								<input data-1p-ignore data-lpignore="true" bind:value={exportLimitKw} type="number" min="0" max="20" step="0.01" />
 							</label>
 						</div>
 					</details>
@@ -1054,8 +1071,9 @@
 				</section>
 			{:else}
 				<section class="card results placeholder">
-					<h2>Forecast</h2>
-					<p class="meta">Set your inputs on the left and click Build forecast.</p>
+					<div class="empty-state-icon" aria-hidden="true">🌤️</div>
+					<h2 class="empty-state-title">Forecast Awaits</h2>
+					<p class="meta empty-state-copy">Set your inputs on the left and click Build forecast.</p>
 				</section>
 			{/if}
 		</div>
@@ -1085,6 +1103,10 @@
 	.left-col,
 	.right-col {
 		min-width: 0;
+	}
+
+	.right-col {
+		display: flex;
 	}
 
 	.card {
@@ -1279,10 +1301,33 @@
 	}
 
 	.placeholder {
-		min-height: 160px;
+		flex: 1;
+		min-height: clamp(360px, 66vh, 860px);
 		display: flex;
 		flex-direction: column;
 		justify-content: center;
+		align-items: center;
+		text-align: center;
+		background:
+			radial-gradient(circle at 20% 10%, rgba(125, 211, 252, 0.32), transparent 40%),
+			radial-gradient(circle at 90% 80%, rgba(196, 181, 253, 0.26), transparent 35%),
+			linear-gradient(170deg, #ffffff, #f8fafc);
+	}
+
+	.empty-state-icon {
+		font-size: clamp(78px, 10vw, 132px);
+		line-height: 1;
+		margin-bottom: 0.8rem;
+		filter: drop-shadow(0 10px 20px rgba(59, 130, 246, 0.22));
+	}
+
+	.empty-state-title {
+		font-size: clamp(1.5rem, 3vw, 2.2rem);
+		margin-bottom: 0.15rem;
+	}
+
+	.empty-state-copy {
+		max-width: 32ch;
 	}
 
 	h2 {
@@ -1463,6 +1508,16 @@
 	}
 
 	@media (max-width: 720px) {
+		.right-col {
+			display: block;
+		}
+
+		.placeholder {
+			min-height: 260px;
+			padding-top: 2rem;
+			padding-bottom: 2rem;
+		}
+
 		.results-head {
 			flex-direction: column;
 			align-items: stretch;
