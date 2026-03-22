@@ -1112,6 +1112,10 @@
 			{/if}
 		</div>
 	</div>
+	<footer class="site-footer">
+		Built for fun with Open-Meteo and Postcodes.io APIs ·
+		<a href="https://github.com/alpower/solarcast" target="_blank" rel="noreferrer">GitHub</a>
+	</footer>
 </main>
 
 <style>
@@ -1134,6 +1138,8 @@
 		margin: 0 auto;
 		padding: 2rem 1rem 3rem;
 		overflow-x: clip;
+		position: relative;
+		min-height: calc(100vh - 5rem);
 	}
 
 	.app-layout {
@@ -1661,6 +1667,25 @@
 		color: #475569;
 	}
 
+	.site-footer {
+		position: absolute;
+		right: 1rem;
+		bottom: 0.8rem;
+		font-size: 0.78rem;
+		color: #64748b;
+	}
+
+	.site-footer a {
+		color: #1d4ed8;
+		text-decoration: none;
+		font-weight: 600;
+	}
+
+	.site-footer a:hover,
+	.site-footer a:focus-visible {
+		text-decoration: underline;
+	}
+
 	@media (max-width: 920px) {
 		.panel-fields {
 			grid-template-columns: repeat(2, minmax(120px, 1fr));
@@ -1698,6 +1723,12 @@
 	}
 
 	@media (max-width: 720px) {
+		.site-footer {
+			position: static;
+			margin-top: 0.85rem;
+			text-align: center;
+		}
+
 		.left-col {
 			max-width: none;
 		}
