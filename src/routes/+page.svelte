@@ -1131,7 +1131,7 @@
 		</div>
 	</div>
 	<footer class="site-footer">
-		Built for fun with Open-Meteo and Postcodes.io APIs ·
+		Built for fun by <a href="https://www.alpower.com/" target="_blank" rel="noreferrer">Al Power</a> with Open-Meteo and Postcodes.io APIs ·
 		<a href="https://github.com/alpower/solarcast" target="_blank" rel="noreferrer">GitHub</a>
 	</footer>
 </main>
