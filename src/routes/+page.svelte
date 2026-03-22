@@ -401,6 +401,7 @@
 		loading = true;
 		errorMessage = '';
 		result = null;
+		panelStrings = panelStrings.map((panel) => ({ ...panel, expanded: false }));
 
 		try {
 			const activeStrings = panelStrings
@@ -716,12 +717,20 @@
 								}}
 							>
 								<summary>
-									<span class="panel-title">{panel.name || `String ${panel.id}`}</span>
-									<span class="panel-meta">
-										{Number(panel.panelKw || 0).toFixed(1)} kWp · {compassLabelFromAzimuth(panel.azimuth)} ·
-										tilt {Math.round(panel.tilt || 0)}° · loss {Math.round(panel.lossPercent || 0)}% · cal{' '}
-										{Number(panel.calibrationFactor || 1).toFixed(2)}
-									</span>
+									<div class="panel-summary-row">
+										<div class="panel-summary-copy">
+											<span class="panel-title">{panel.name || `String ${panel.id}`}</span>
+											<span class="panel-meta">
+												{Number(panel.panelKw || 0).toFixed(1)} kWp · {compassLabelFromAzimuth(panel.azimuth)} ·
+												tilt {Math.round(panel.tilt || 0)}° · loss {Math.round(panel.lossPercent || 0)}% · cal{' '}
+												{Number(panel.calibrationFactor || 1).toFixed(2)}
+											</span>
+										</div>
+										<span class="panel-toggle" aria-hidden="true">
+											<span class="panel-toggle-text">{panel.expanded ? 'Collapse' : 'Expand'}</span>
+											<span class="panel-chevron">▾</span>
+										</span>
+									</div>
 								</summary>
 								<div class="panel-fields">
 									<label>
@@ -1208,13 +1217,35 @@
 	.panel-item summary {
 		list-style: none;
 		cursor: pointer;
-		display: flex;
-		flex-direction: column;
-		gap: 0.2rem;
+		border-radius: 0.45rem;
+		padding: 0.2rem 0.25rem;
+		transition: background-color 140ms ease, box-shadow 140ms ease;
 	}
 
 	.panel-item summary::-webkit-details-marker {
 		display: none;
+	}
+
+	.panel-item summary:hover {
+		background: #f8fafc;
+	}
+
+	.panel-item summary:focus-visible {
+		outline: none;
+		box-shadow: 0 0 0 2px #bfdbfe;
+	}
+
+	.panel-summary-row {
+		display: flex;
+		gap: 0.75rem;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.panel-summary-copy {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
 	}
 
 	.panel-title {
@@ -1225,6 +1256,26 @@
 	.panel-meta {
 		font-size: 0.82rem;
 		color: #475569;
+	}
+
+	.panel-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		color: #475569;
+		font-size: 0.78rem;
+		font-weight: 700;
+		white-space: nowrap;
+	}
+
+	.panel-chevron {
+		font-size: 0.95rem;
+		line-height: 1;
+		transition: transform 160ms ease;
+	}
+
+	.panel-item[open] .panel-chevron {
+		transform: rotate(180deg);
 	}
 
 	.panel-fields {
